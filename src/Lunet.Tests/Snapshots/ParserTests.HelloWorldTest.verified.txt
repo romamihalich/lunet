@@ -1,0 +1,43 @@
+﻿{
+  $type: Ast,
+  Statements: [
+    {
+      $type: ImportStatement,
+      Path: {
+        $type: NamespacePath,
+        Path: [
+          System
+        ]
+      }
+    },
+    {
+      $type: FunctionStatement,
+      Name: main,
+      Body: [
+        {
+          $type: ExpressionStatement,
+          Expression: {
+            $type: FunctionCallExpression,
+            Name: {
+              $type: QualifiedIdentExpression,
+              Path: {
+                $type: NamespacePath,
+                Path: [
+                  System,
+                  Console
+                ]
+              },
+              Ident: WriteLine
+            },
+            Args: [
+              {
+                $type: StringExpression,
+                Value: Hello, world
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+import System
+
+function main()
+    System::Console.WriteLine("Hello, world")
+end
