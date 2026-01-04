@@ -2,7 +2,7 @@
 
 namespace Lunet;
 
-public record struct Token(TokenKind Kind, object? Value);
+public record struct Token(TokenKind Kind, object? Value, Location Location);
 
 public enum TokenKind
 {
@@ -28,12 +28,16 @@ public enum TokenKind
 public class Lexer
 {
     private readonly string _sourceCode;
+    private readonly Diagnostics _diagnostics;
 
     private int _position;
+    private int _row = 1;
+    private int _col = 0;
 
-    public Lexer(string sourceCode)
+    public Lexer(string sourceCode, Diagnostics diagnostics)
     {
         _sourceCode = sourceCode;
+        _diagnostics = diagnostics;
     }
 
     public Token Lex()
@@ -44,32 +48,35 @@ public class Lexer
 
         return ch switch
         {
-            '\0'                    => new(TokenKind.Eof, null),
+            '\0'                    => Eat(TokenKind.Eof, 0),
             _ when IsIdentStart(ch) => ReadIdentOrKeyword(ch),
             '"'                     => ReadString(),
 
-            '('                     => new(TokenKind.OParen, null),
-            ')'                     => new(TokenKind.CParen, null),
+            '('                     => Eat(TokenKind.OParen, 0),
+            ')'                     => Eat(TokenKind.CParen, 0),
             ':' when Peek() == ':'  => Eat(TokenKind.DoubleColon, 1),
-            ':'                     => new(TokenKind.Colon, null),
-            '.'                     => new(TokenKind.Dot, null),
-            _                       => new(TokenKind.Illegal, null),
+            ':'                     => Eat(TokenKind.Colon, 0),
+            '.'                     => Eat(TokenKind.Dot, 0),
+            _                       => Eat(TokenKind.Illegal, 0),
         };
     }
 
     private Token Eat(TokenKind kind, int skipCount)
     {
+        var startLoc = GetCurrentLocation();
         for (int i = 0; i < skipCount; i++)
         {
             NextChar();
         }
-        return new(kind, null);
+        var endLoc = GetCurrentLocation();
+        var loc = Location.Combine(startLoc, endLoc);
+        return new(kind, null, loc);
     }
 
     private Token ReadIdentOrKeyword(char firstCh)
     {
+        var startLoc = GetCurrentLocation();
         var sb = new StringBuilder();
-
         sb.Append(firstCh);
         while (true)
         {
@@ -81,23 +88,23 @@ public class Lexer
             sb.Append(ch);
             NextChar();
         }
-
         var ident = sb.ToString();
-
+        var endLoc = GetCurrentLocation();
+        var loc = Location.Combine(startLoc, endLoc);
         if (LookupKeyword(ident, out var keywordKind))
         {
-            return new(keywordKind, null);
+            return new(keywordKind, null, loc);
         }
         else
         {
-            return new(TokenKind.Ident, ident);
+            return new(TokenKind.Ident, ident, loc);
         }
     }
 
     private Token ReadString()
     {
+        var startLoc = GetCurrentLocation();
         var sb = new StringBuilder();
-
         char ch;
         while (true)
         {
@@ -109,16 +116,17 @@ public class Lexer
             // TODO: think about escaping (\r,\n,\t and so on)
             sb.Append(ch);
         }
-
+        var endLoc = GetCurrentLocation();
+        var loc = Location.Combine(startLoc, endLoc);
         if (ch == '"')
         {
             var text = sb.ToString();
-            return new(TokenKind.String, text);
+            return new(TokenKind.String, text, loc);
         }
         else
         {
-            // TODO: add to diagnostics error message
-            return new(TokenKind.Illegal, null);
+            _diagnostics.AddError(loc, "Unclosed string literal");
+            return new(TokenKind.Illegal, null, loc);
         }
     }
 
@@ -152,12 +160,20 @@ public class Lexer
         return char.IsLetterOrDigit(ch) || ch == '_';
     }
 
+    private Location GetCurrentLocation()
+    {
+        return new Location(
+            row: _row,
+            col: _col
+        );
+    }
+
     private void SkipWhiteSpace()
     {
         while (_position < _sourceCode.Length
                && IsWhiteSpace(_sourceCode[_position]))
         {
-            _position++;
+            NextChar();
         }
     }
 
@@ -179,6 +195,15 @@ public class Lexer
         }
 
         var ch = _sourceCode[_position];
+        if (ch == '\n')
+        {
+            _row++;
+            _col = 0;
+        }
+        else
+        {
+            _col++;
+        }
         _position++;
         return ch;
     }

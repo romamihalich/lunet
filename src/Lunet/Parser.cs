@@ -20,12 +20,14 @@ public record NamespacePath(IReadOnlyList<string> Path);
 public class Parser
 {
     private readonly Lexer _lexer;
+    private readonly Diagnostics _diagnostics;
 
     private Token _lookahead;
 
-    public Parser(Lexer lexer)
+    public Parser(Lexer lexer, Diagnostics diagnostics)
     {
         _lexer = lexer;
+        _diagnostics = diagnostics;
         _lookahead = lexer.Lex();
     }
 
@@ -195,7 +197,7 @@ public class Parser
         t = NextToken();
         if (t.Kind != kind)
         {
-            // TODO: add to diagnostics
+            _diagnostics.AddError(t.Location, "Unexpected token");
             return false;
         }
 

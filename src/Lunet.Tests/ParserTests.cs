@@ -26,9 +26,10 @@ public class ParserTests
     [Test]
     public Task HelloWorldTest()
     {
-        var l = new Lexer(HelloWorld);
-        var p = new Parser(l);
-        var ast = p.Parse();
+        var diagnostics = new Diagnostics();
+        var lexer = new Lexer(HelloWorld, diagnostics);
+        var parser = new Parser(lexer, diagnostics);
+        var ast = parser.Parse();
 
         return Verify(ast, _verifySettings);
     }
