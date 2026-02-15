@@ -27,7 +27,7 @@ public class CodeGen
         // var imports = ast.Statements.OfType<ImportStatement>().ToArray();
 
         var coreLibrary = AssemblyDefinition.ReadAssembly(typeof(object).Assembly.Location);
-        var consoleLibrary = AssemblyDefinition.ReadAssembly(typeof(System.Console).Assembly.Location);
+        var consoleLibrary = AssemblyDefinition.ReadAssembly(typeof(Console).Assembly.Location);
         var referenceAssemblies = new[]
         {
             coreLibrary,
@@ -140,62 +140,111 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
     {
         var ilProcessor = mainMethod.Body.GetILProcessor();
 
-        foreach (var funcStatement in function.Body)
+        var locals = new Dictionary<string, (TypeReference type, int id)>();
+        var localId = 0;
+
+        foreach (var statement in function.Body)
         {
-            switch (funcStatement)
+            switch (statement)
             {
                 case ExpressionStatement expressionStatement:
-                    var funcCall = expressionStatement.Expression;
-                    var namespaceOrClassPath = funcCall.Name.Path.Path;
-                    if (!namespaceOrClassPath.Any())
                     {
-                        throw new NotImplementedException("local function not supported yet");
-                    }
-                    if (funcCall.Name.Ident is null)
-                    {
-                        throw new NotImplementedException();
-                    }
-                    // ["System", "Console"] ident: "WriteLine"
+                        var exprType = EvaluateExpression(ilProcessor, locals, expressionStatement.Expression);
 
-                    var prefix = funcCall.Name.Path.Path[0];
-                    if (!_importedNamespaces.Any(x => x.Split('.').Last() == prefix))
-                    {
-                        throw new NotImplementedException();
-                    }
-
-                    var className = string.Join(".", funcCall.Name.Path.Path);
-                    var methodName = funcCall.Name.Ident;
-                    var parameterTypes = new List<string>();
-
-                    foreach (var arg in funcCall.Args)
-                    {
-                        switch (arg)
+                        if (exprType != assembly.MainModule.TypeSystem.Void)
                         {
-                            case StringExpression(string value):
-                                ilProcessor.Emit(OpCodes.Ldstr, value);
-                                parameterTypes.Add("System.String");
-                                break;
-                            case FunctionCallExpression(QualifiedIdentExpression name, IReadOnlyList<IExpression> args):
-                                throw new NotImplementedException();
-                            default:
-                                throw new Exception();
+                            ilProcessor.Emit(OpCodes.Pop);
                         }
+                        break;
                     }
-
-                    var method = FindStaticMethod(className, methodName, parameterTypes);
-                    var methodRef = assembly.MainModule.ImportReference(method);
-
-                    ilProcessor.Emit(OpCodes.Call, methodRef);
-                    break;
+                case VariableDefinitionStatement variableDefinitionStatement:
+                    {
+                        var realType = variableDefinitionStatement.Type switch
+                        {
+                            "string" => assembly.MainModule.TypeSystem.String,
+                            _ => throw new Exception("Unknown type"),
+                        };
+                        var exprType = EvaluateExpression(ilProcessor, locals, variableDefinitionStatement.Rvalue);
+                        if (realType != exprType)
+                        {
+                            throw new Exception("Types not match");
+                        }
+                        mainMethod.Body.Variables.Add(new VariableDefinition(exprType));
+                        ilProcessor.Emit(OpCodes.Stloc, localId);
+                        locals[variableDefinitionStatement.Name] = (realType, localId++);
+                        break;
+                    }
                 default:
-                    throw new Exception();
+                    throw new ArgumentOutOfRangeException(nameof(statement));
             }
         }
 
         ilProcessor.Emit(OpCodes.Ret);
     }
 
-    private MethodDefinition? FindStaticMethod(string className, string methodName, IEnumerable<string> parameterTypes)
+    private TypeReference EvaluateExpression(ILProcessor ilProcessor, Dictionary<string, (TypeReference type, int id)> locals, IExpression expression)
+    {
+        switch (expression)
+        {
+            case StringExpression(string value):
+            {
+                ilProcessor.Emit(OpCodes.Ldstr, value);
+                return assembly.MainModule.TypeSystem.String;
+            }
+            case IdentExpression(string name):
+            {
+                if (locals.TryGetValue(name, out var local))
+                {
+                    ilProcessor.Emit(OpCodes.Ldloc, local.id);
+                    return local.type;
+                }
+                else
+                {
+                    throw new Exception("variable not found");
+                }
+            }
+            case FunctionCallExpression funcCall:
+            {
+                var namespaceOrClassPath = funcCall.Name.Path.Path;
+                if (!namespaceOrClassPath.Any())
+                {
+                    throw new NotImplementedException("local function not supported yet");
+                }
+                if (funcCall.Name.Ident is null)
+                {
+                    throw new NotImplementedException();
+                }
+                // ["System", "Console"] ident: "WriteLine"
+
+                var prefix = funcCall.Name.Path.Path[0];
+                if (!_importedNamespaces.Any(x => x.Split('.').Last() == prefix))
+                {
+                    throw new NotImplementedException();
+                }
+
+                var className = string.Join(".", funcCall.Name.Path.Path);
+                var methodName = funcCall.Name.Ident;
+                var parameterTypes = new List<TypeReference>();
+
+                foreach (var arg in funcCall.Args)
+                {
+                    parameterTypes.Add(EvaluateExpression(ilProcessor, locals, arg));
+                }
+
+                var method = FindStaticMethod(className, methodName, parameterTypes);
+                var methodRef = assembly.MainModule.ImportReference(method);
+
+                ilProcessor.Emit(OpCodes.Call, methodRef);
+
+                // TODO: this is temporary
+                return assembly.MainModule.TypeSystem.Void;
+            }
+            default:
+                throw new ArgumentOutOfRangeException(nameof(expression));
+        }
+    }
+
+    private MethodDefinition? FindStaticMethod(string className, string methodName, IEnumerable<TypeReference> parameterTypes)
     {
         var types = referenceAssemblies
             .SelectMany(a => a.Modules)
@@ -204,7 +253,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
         var methods = types.SelectMany(t => t.Methods)
             .Where(m => m.IsPublic && m.IsStatic)
             .Where(m => m.Name == methodName)
-            .Where(m => m.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(parameterTypes))
+            .Where(m => m.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(parameterTypes.Select(p => p.FullName)))
             .ToArray();
         if (methods.Length != 1)
         {

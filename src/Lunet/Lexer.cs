@@ -16,6 +16,7 @@ public enum TokenKind
     Import,
     Function,
     End,
+    Local,
 
     // symbols
     OParen,
@@ -23,6 +24,7 @@ public enum TokenKind
     Colon,
     DoubleColon,
     Dot,
+    Equals,
 }
 
 public class Lexer
@@ -57,6 +59,7 @@ public class Lexer
             ':' when Peek() == ':'  => Eat(TokenKind.DoubleColon, 1),
             ':'                     => Eat(TokenKind.Colon, 0),
             '.'                     => Eat(TokenKind.Dot, 0),
+            '='                     => Eat(TokenKind.Equals, 0),
             _                       => Eat(TokenKind.Illegal, 0),
         };
     }
@@ -137,6 +140,7 @@ public class Lexer
             "import"   => kind = TokenKind.Import,
             "function" => kind = TokenKind.Function,
             "end"      => kind = TokenKind.End,
+            "local"    => kind = TokenKind.Local,
             _          => kind = default,
         };
 

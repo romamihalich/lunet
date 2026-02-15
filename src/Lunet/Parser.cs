@@ -8,9 +8,11 @@ public record FunctionStatement(string Name, IReadOnlyList<IStatement> Body) : I
 
 public interface IStatement;
 public record ExpressionStatement(FunctionCallExpression Expression) : IStatement;
+public record VariableDefinitionStatement(string Name, string Type, IExpression Rvalue) : IStatement;
 
 public interface IExpression;
 public record StringExpression(string Value) : IExpression;
+public record IdentExpression(string Name) : IExpression;
 public record FunctionCallExpression(QualifiedIdentExpression Name, IReadOnlyList<IExpression> Args) : IExpression;
 
 public record QualifiedIdentExpression(NamespacePath Path, string? Ident) : IExpression;
@@ -107,6 +109,7 @@ public class Parser
         switch (Peek().Kind)
         {
             case TokenKind.Ident:
+            {
                 var identExpr = ParseQualifiedIdentExpression();
                 if (identExpr == null)
                 {
@@ -124,9 +127,51 @@ public class Parser
                 {
                     throw new NotImplementedException();
                 }
+            }
+            case TokenKind.Local:
+            {
+                return ParseVariableDefinitionStatement();
+            }
             default:
                 return null;
         }
+    }
+
+    private VariableDefinitionStatement? ParseVariableDefinitionStatement()
+    {
+        if (!ExpectToken(TokenKind.Local))
+        {
+            return null;
+        }
+
+        if (!ExpectToken(TokenKind.Ident, out var nameTok))
+        {
+            return null;
+        }
+
+        var name = (string)nameTok.Value!;
+
+        if (!ExpectToken(TokenKind.Colon))
+        {
+            return null;
+        }
+
+        // TODO: qualified name
+        if (!ExpectToken(TokenKind.Ident, out var typeTok))
+        {
+            return null;
+        }
+
+        var type = (string)typeTok.Value!;
+
+        if (!ExpectToken(TokenKind.Equals))
+        {
+            return null;
+        }
+
+        var rvalue = ParseExpression();
+
+        return new VariableDefinitionStatement(name, type, rvalue);
     }
 
     private IReadOnlyList<IExpression>? ParseArgs()
@@ -187,6 +232,9 @@ public class Parser
             case TokenKind.String:
                 return new StringExpression((string)t.Value!);
 
+            case TokenKind.Ident:
+                return new IdentExpression((string)t.Value!);
+
             default:
                 throw new NotImplementedException();
         }
@@ -197,11 +245,16 @@ public class Parser
         t = NextToken();
         if (t.Kind != kind)
         {
-            _diagnostics.AddError(t.Location, "Unexpected token");
+            _diagnostics.AddError(t.Location, $"Unexpected token \"{t.Kind}\"");
             return false;
         }
 
         return true;
+    }
+
+    private bool ExpectToken(TokenKind kind)
+    {
+        return ExpectToken(kind, out var _);
     }
 
     private Token Peek()
