@@ -1,0 +1,15 @@
+import System
+
+function main()
+    local greeting: string = "Hello, world"
+
+    local number: int = 32
+
+    local t: bool = true
+    local f: bool = false
+
+    System::Console.WriteLine(greeting)
+    System::Console.WriteLine(number)
+    System::Console.WriteLine(t)
+    System::Console.WriteLine(f)
+end

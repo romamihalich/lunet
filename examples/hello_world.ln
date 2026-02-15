@@ -1,6 +1,5 @@
 import System
 
 function main()
-    local greeting: string = "Hello, world"
-    System::Console.WriteLine(greeting)
+    System::Console.WriteLine("Hello, world")
 end

@@ -11,6 +11,9 @@ public enum TokenKind
 
     Ident,
     String,
+    Int,
+    True,
+    False,
 
     // keywords
     Import,
@@ -51,6 +54,7 @@ public class Lexer
         return ch switch
         {
             '\0'                    => Eat(TokenKind.Eof, 0),
+            >= '0' and <= '9'       => ReadNumber(ch),
             _ when IsIdentStart(ch) => ReadIdentOrKeyword(ch),
             '"'                     => ReadString(),
 
@@ -133,6 +137,22 @@ public class Lexer
         }
     }
 
+    private Token ReadNumber(char firstCh)
+    {
+        var startLoc = GetCurrentLocation();
+        var sb = new StringBuilder();
+        sb.Append(firstCh);
+        while (char.IsAsciiDigit(Peek()))
+        {
+            sb.Append(NextChar());
+        }
+        var endLoc = GetCurrentLocation();
+        var loc = Location.Combine(startLoc, endLoc);
+        // TODO: what if number is too big?
+        var n = int.Parse(sb.ToString());
+        return new(TokenKind.Int, n, loc);
+    }
+
     private static bool LookupKeyword(string ident, out TokenKind kind)
     {
         _ = ident switch
@@ -141,6 +161,8 @@ public class Lexer
             "function" => kind = TokenKind.Function,
             "end"      => kind = TokenKind.End,
             "local"    => kind = TokenKind.Local,
+            "true"     => kind = TokenKind.True,
+            "false"    => kind = TokenKind.False,
             _          => kind = default,
         };
 

@@ -11,8 +11,10 @@ public record ExpressionStatement(FunctionCallExpression Expression) : IStatemen
 public record VariableDefinitionStatement(string Name, string Type, IExpression Rvalue) : IStatement;
 
 public interface IExpression;
-public record StringExpression(string Value) : IExpression;
 public record IdentExpression(string Name) : IExpression;
+public record StringExpression(string Value) : IExpression;
+public record IntExpression(int Value) : IExpression;
+public record BoolExpression(bool Value) : IExpression;
 public record FunctionCallExpression(QualifiedIdentExpression Name, IReadOnlyList<IExpression> Args) : IExpression;
 
 public record QualifiedIdentExpression(NamespacePath Path, string? Ident) : IExpression;
@@ -171,6 +173,11 @@ public class Parser
 
         var rvalue = ParseExpression();
 
+        if (rvalue == null)
+        {
+            return null;
+        }
+
         return new VariableDefinitionStatement(name, type, rvalue);
     }
 
@@ -179,6 +186,11 @@ public class Parser
         if (!ExpectToken(TokenKind.OParen, out _)) return null;
 
         var expr = ParseExpression();
+
+        if (expr == null)
+        {
+            return null;
+        }
 
         // TODO: support for multiple args
 
@@ -224,19 +236,28 @@ public class Parser
         }
     }
 
-    private IExpression ParseExpression()
+    private IExpression? ParseExpression()
     {
         var t = NextToken();
         switch (t.Kind)
         {
-            case TokenKind.String:
-                return new StringExpression((string)t.Value!);
-
             case TokenKind.Ident:
                 return new IdentExpression((string)t.Value!);
 
+            case TokenKind.String:
+                return new StringExpression((string)t.Value!);
+
+            case TokenKind.Int:
+                return new IntExpression((int)t.Value!);
+
+            case TokenKind.True:
+                return new BoolExpression(true);
+
+            case TokenKind.False:
+                return new BoolExpression(false);
+
             default:
-                throw new NotImplementedException();
+                return null;
         }
     }
 

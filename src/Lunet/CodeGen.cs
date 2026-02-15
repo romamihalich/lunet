@@ -162,6 +162,8 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                         var realType = variableDefinitionStatement.Type switch
                         {
                             "string" => assembly.MainModule.TypeSystem.String,
+                            "int" => assembly.MainModule.TypeSystem.Int32,
+                            "bool" => assembly.MainModule.TypeSystem.Boolean,
                             _ => throw new Exception("Unknown type"),
                         };
                         var exprType = EvaluateExpression(ilProcessor, locals, variableDefinitionStatement.Rvalue);
@@ -186,11 +188,6 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
     {
         switch (expression)
         {
-            case StringExpression(string value):
-            {
-                ilProcessor.Emit(OpCodes.Ldstr, value);
-                return assembly.MainModule.TypeSystem.String;
-            }
             case IdentExpression(string name):
             {
                 if (locals.TryGetValue(name, out var local))
@@ -202,6 +199,21 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 {
                     throw new Exception("variable not found");
                 }
+            }
+            case StringExpression(string value):
+            {
+                ilProcessor.Emit(OpCodes.Ldstr, value);
+                return assembly.MainModule.TypeSystem.String;
+            }
+            case IntExpression(int value):
+            {
+                ilProcessor.Emit(OpCodes.Ldc_I4, value);
+                return assembly.MainModule.TypeSystem.Int32;
+            }
+            case BoolExpression(bool value):
+            {
+                ilProcessor.Emit(OpCodes.Ldc_I4, value ? 1 : 0);
+                return assembly.MainModule.TypeSystem.Boolean;
             }
             case FunctionCallExpression funcCall:
             {
