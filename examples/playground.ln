@@ -8,6 +8,8 @@ function main()
     local t: bool = true
     local f: bool = false
 
+    -- comment
+
     System::Console.WriteLine(greeting)
     System::Console.WriteLine(number)
     System::Console.WriteLine(t)

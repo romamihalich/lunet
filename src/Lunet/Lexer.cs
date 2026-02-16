@@ -51,6 +51,21 @@ public class Lexer
 
         var ch = NextChar();
 
+        if (ch == '-' && Peek() == '-')
+        {
+            // skip comment
+            while (true)
+            {
+                var curr = NextChar();
+                if (curr == '\n' || curr == '\0')
+                {
+                    break;
+                }
+            }
+            SkipWhiteSpace();
+            ch = NextChar();
+        }
+
         return ch switch
         {
             '\0'                    => Eat(TokenKind.Eof, 0),
