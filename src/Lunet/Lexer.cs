@@ -20,6 +20,9 @@ public enum TokenKind
     Function,
     End,
     Local,
+    And,
+    Or,
+    Not,
 
     // symbols
     OParen,
@@ -27,7 +30,18 @@ public enum TokenKind
     Colon,
     DoubleColon,
     Dot,
+    DoubleDot,
     Equals,
+    DoubleEquals,
+    NotEquals,
+    Asterisk,
+    Slash,
+    Plus,
+    Minus,
+    Greater,
+    GreaterOrEqual,
+    Less,
+    LessOrEqual,
 }
 
 public class Lexer
@@ -51,7 +65,7 @@ public class Lexer
 
         var ch = NextChar();
 
-        if (ch == '-' && Peek() == '-')
+        while (ch == '-' && Peek() == '-')
         {
             // skip comment
             while (true)
@@ -68,7 +82,6 @@ public class Lexer
 
         return ch switch
         {
-            '\0'                    => Eat(TokenKind.Eof, 0),
             >= '0' and <= '9'       => ReadNumber(ch),
             _ when IsIdentStart(ch) => ReadIdentOrKeyword(ch),
             '"'                     => ReadString(),
@@ -77,8 +90,20 @@ public class Lexer
             ')'                     => Eat(TokenKind.CParen, 0),
             ':' when Peek() == ':'  => Eat(TokenKind.DoubleColon, 1),
             ':'                     => Eat(TokenKind.Colon, 0),
+            '.' when Peek() == '.'  => Eat(TokenKind.DoubleDot, 1),
             '.'                     => Eat(TokenKind.Dot, 0),
+            '~' when Peek() == '='  => Eat(TokenKind.NotEquals, 1),
+            '=' when Peek() == '='  => Eat(TokenKind.DoubleEquals, 1),
             '='                     => Eat(TokenKind.Equals, 0),
+            '*'                     => Eat(TokenKind.Asterisk, 0),
+            '/'                     => Eat(TokenKind.Slash, 0),
+            '+'                     => Eat(TokenKind.Plus, 0),
+            '-'                     => Eat(TokenKind.Minus, 0),
+            '>' when Peek() == '='  => Eat(TokenKind.GreaterOrEqual, 1),
+            '>'                     => Eat(TokenKind.Greater, 0),
+            '<' when Peek() == '='  => Eat(TokenKind.LessOrEqual, 1),
+            '<'                     => Eat(TokenKind.Less, 0),
+            '\0'                    => Eat(TokenKind.Eof, 0),
             _                       => Eat(TokenKind.Illegal, 0),
         };
     }
@@ -92,6 +117,10 @@ public class Lexer
         }
         var endLoc = GetCurrentLocation();
         var loc = Location.Combine(startLoc, endLoc);
+        if (kind == TokenKind.Illegal)
+        {
+            _diagnostics.AddError(loc, "Illegal token");
+        }
         return new(kind, null, loc);
     }
 
@@ -178,6 +207,9 @@ public class Lexer
             "local"    => kind = TokenKind.Local,
             "true"     => kind = TokenKind.True,
             "false"    => kind = TokenKind.False,
+            "and"      => kind = TokenKind.And,
+            "or"       => kind = TokenKind.Or,
+            "not"      => kind = TokenKind.Not,
             _          => kind = default,
         };
 

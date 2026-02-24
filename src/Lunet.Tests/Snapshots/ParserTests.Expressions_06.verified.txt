@@ -1,0 +1,28 @@
+﻿{
+  $type: BinopExpression,
+  Kind: LessOrEqual,
+  Left: {
+    $type: BinopExpression,
+    Kind: Minus,
+    Left: {
+      $type: BinopExpression,
+      Kind: Div,
+      Left: {
+        $type: IntExpression,
+        Value: 10
+      },
+      Right: {
+        $type: IntExpression,
+        Value: 2
+      }
+    },
+    Right: {
+      $type: IntExpression,
+      Value: 3
+    }
+  },
+  Right: {
+    $type: IdentExpression,
+    Name: f
+  }
+}

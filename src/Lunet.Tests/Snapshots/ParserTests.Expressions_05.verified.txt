@@ -1,0 +1,48 @@
+﻿{
+  $type: BinopExpression,
+  Kind: Or,
+  Left: {
+    $type: BinopExpression,
+    Kind: Equal,
+    Left: {
+      $type: IdentExpression,
+      Name: n
+    },
+    Right: {
+      $type: IntExpression,
+      Value: 5
+    }
+  },
+  Right: {
+    $type: BinopExpression,
+    Kind: And,
+    Left: {
+      $type: BinopExpression,
+      Kind: NotEqual,
+      Left: {
+        $type: IdentExpression,
+        Name: n
+      },
+      Right: {
+        $type: IntExpression,
+        Value: 2
+      }
+    },
+    Right: {
+      $type: UnaryExpression,
+      Kind: Not,
+      Expression: {
+        $type: BinopExpression,
+        Kind: GreaterOrEqual,
+        Left: {
+          $type: IdentExpression,
+          Name: n
+        },
+        Right: {
+          $type: IntExpression,
+          Value: 10
+        }
+      }
+    }
+  }
+}

@@ -149,7 +149,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             {
                 case ExpressionStatement expressionStatement:
                     {
-                        var exprType = EvaluateExpression(ilProcessor, locals, expressionStatement.Expression);
+                        var exprType = CompileExpression(ilProcessor, locals, expressionStatement.Expression);
 
                         if (exprType != assembly.MainModule.TypeSystem.Void)
                         {
@@ -166,7 +166,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                             "bool" => assembly.MainModule.TypeSystem.Boolean,
                             _ => throw new Exception("Unknown type"),
                         };
-                        var exprType = EvaluateExpression(ilProcessor, locals, variableDefinitionStatement.Rvalue);
+                        var exprType = CompileExpression(ilProcessor, locals, variableDefinitionStatement.Rvalue);
                         if (realType != exprType)
                         {
                             throw new Exception("Types not match");
@@ -184,7 +184,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
         ilProcessor.Emit(OpCodes.Ret);
     }
 
-    private TypeReference EvaluateExpression(ILProcessor ilProcessor, Dictionary<string, (TypeReference type, int id)> locals, IExpression expression)
+    private TypeReference CompileExpression(ILProcessor ilProcessor, Dictionary<string, (TypeReference type, int id)> locals, IExpression expression)
     {
         switch (expression)
         {
@@ -215,6 +215,29 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 ilProcessor.Emit(OpCodes.Ldc_I4, value ? 1 : 0);
                 return assembly.MainModule.TypeSystem.Boolean;
             }
+            case UnaryExpression(var kind, var expr):
+            {
+                var type = CompileExpression(ilProcessor, locals, expr);
+                switch (kind)
+                {
+                    case UnaryKind.Not:
+                        if (type == assembly.MainModule.TypeSystem.Boolean)
+                        {
+                            ilProcessor.Emit(OpCodes.Ceq);
+                            return assembly.MainModule.TypeSystem.Boolean;
+                        }
+                        else
+                        {
+                            throw new Exception("bad type");
+                        }
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(kind));
+                }
+            }
+            case BinopExpression binop:
+            {
+                return CompileBinop(ilProcessor, locals, binop);
+            }
             case FunctionCallExpression funcCall:
             {
                 var namespaceOrClassPath = funcCall.Name.Path.Path;
@@ -240,7 +263,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
 
                 foreach (var arg in funcCall.Args)
                 {
-                    parameterTypes.Add(EvaluateExpression(ilProcessor, locals, arg));
+                    parameterTypes.Add(CompileExpression(ilProcessor, locals, arg));
                 }
 
                 var method = FindStaticMethod(className, methodName, parameterTypes);
@@ -253,6 +276,240 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             }
             default:
                 throw new ArgumentOutOfRangeException(nameof(expression));
+        }
+    }
+
+    private TypeReference CompileBinop(ILProcessor ilProcessor, Dictionary<string, (TypeReference type, int id)> locals, BinopExpression binop)
+    {
+        switch (binop.Kind)
+        {
+            case BinopKind.Mul:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Mul);
+                    return assembly.MainModule.TypeSystem.Int32;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.Div:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Div);
+                    return assembly.MainModule.TypeSystem.Int32;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.Add:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Add);
+                    return assembly.MainModule.TypeSystem.Int32;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.Sub:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Sub);
+                    return assembly.MainModule.TypeSystem.Int32;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.Concat:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.String
+                    && rightType == assembly.MainModule.TypeSystem.String)
+                {
+                    throw new NotImplementedException("string concatenation");
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+
+            case BinopKind.Equal:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Ceq);
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.NotEqual:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Ceq);
+                    ilProcessor.Emit(OpCodes.Ldc_I4_0);
+                    ilProcessor.Emit(OpCodes.Ceq);
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.And:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+
+                var falseLabel = ilProcessor.Create(OpCodes.Ldc_I4_0);
+                var afterLabel = ilProcessor.Create(OpCodes.Nop);
+
+                ilProcessor.Emit(OpCodes.Brfalse, falseLabel);
+
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+
+                ilProcessor.Emit(OpCodes.Br, afterLabel);
+
+                ilProcessor.Append(falseLabel);
+                ilProcessor.Append(afterLabel);
+
+                if (leftType == assembly.MainModule.TypeSystem.Boolean
+                    && rightType == assembly.MainModule.TypeSystem.Boolean)
+                {
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.Or:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+
+                var trueLabel = ilProcessor.Create(OpCodes.Ldc_I4_1);
+                var afterLabel = ilProcessor.Create(OpCodes.Nop);
+
+                ilProcessor.Emit(OpCodes.Brtrue, trueLabel);
+
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+
+                ilProcessor.Emit(OpCodes.Br, afterLabel);
+
+                ilProcessor.Append(trueLabel);
+                ilProcessor.Append(afterLabel);
+
+                if (leftType == assembly.MainModule.TypeSystem.Boolean
+                    && rightType == assembly.MainModule.TypeSystem.Boolean)
+                {
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+
+            case BinopKind.Greater:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Cgt);
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.GreaterOrEqual:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Clt);
+                    ilProcessor.Emit(OpCodes.Ldc_I4_0);
+                    ilProcessor.Emit(OpCodes.Ceq);
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.Less:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Clt);
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+            case BinopKind.LessOrEqual:
+            {
+                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Cgt);
+                    ilProcessor.Emit(OpCodes.Ldc_I4_0);
+                    ilProcessor.Emit(OpCodes.Ceq);
+                    return assembly.MainModule.TypeSystem.Boolean;
+                }
+                else
+                {
+                    throw new Exception("types not match");
+                }
+            }
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(binop.Kind));
         }
     }
 

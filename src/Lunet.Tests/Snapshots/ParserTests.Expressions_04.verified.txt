@@ -1,0 +1,12 @@
+﻿{
+  $type: BinopExpression,
+  Kind: Concat,
+  Left: {
+    $type: StringExpression,
+    Value: Hello, 
+  },
+  Right: {
+    $type: IdentExpression,
+    Name: name
+  }
+}

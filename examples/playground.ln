@@ -1,6 +1,8 @@
 import System
 
 function main()
+    System::Console.WriteLine(2 + 4 * 5)
+
     local greeting: string = "Hello, world"
 
     local number: int = 32
@@ -10,8 +12,21 @@ function main()
 
     -- comment
 
+    -- "*", "/", "+", "-", ".."
+    -- "==", "~=", "and", "or", "not"
+    -- ">", ">=", "<", "<="
+    -- "(", ")"
+
     System::Console.WriteLine(greeting)
     System::Console.WriteLine(number)
     System::Console.WriteLine(t)
     System::Console.WriteLine(f)
+
+    System::Console.WriteLine(5 == 5)
+
+    System::Console.Write("t and true: ")
+    System::Console.WriteLine(t and true)
+
+    System::Console.Write("false or f: ")
+    System::Console.WriteLine(false or f)
 end

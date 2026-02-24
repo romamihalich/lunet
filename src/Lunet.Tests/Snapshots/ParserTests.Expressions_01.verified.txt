@@ -1,0 +1,20 @@
+﻿{
+  $type: BinopExpression,
+  Kind: Plus,
+  Left: {
+    $type: IntExpression,
+    Value: 2
+  },
+  Right: {
+    $type: BinopExpression,
+    Kind: Mul,
+    Left: {
+      $type: IntExpression,
+      Value: 4
+    },
+    Right: {
+      $type: IntExpression,
+      Value: 5
+    }
+  }
+}

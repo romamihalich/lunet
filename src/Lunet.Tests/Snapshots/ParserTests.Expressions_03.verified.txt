@@ -1,0 +1,28 @@
+﻿{
+  $type: BinopExpression,
+  Kind: And,
+  Left: {
+    $type: BinopExpression,
+    Kind: Greater,
+    Left: {
+      $type: IdentExpression,
+      Name: x
+    },
+    Right: {
+      $type: IntExpression,
+      Value: 3
+    }
+  },
+  Right: {
+    $type: BinopExpression,
+    Kind: Less,
+    Left: {
+      $type: IdentExpression,
+      Name: x
+    },
+    Right: {
+      $type: IntExpression,
+      Value: 9
+    }
+  }
+}
