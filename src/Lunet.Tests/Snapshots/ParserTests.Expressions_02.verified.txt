@@ -2,19 +2,64 @@
   $type: BinopExpression,
   Kind: Mul,
   Left: {
-    $type: BinopExpression,
-    Kind: Plus,
-    Left: {
-      $type: IntExpression,
-      Value: 2
+    $type: ParenthesisedExpression,
+    Expression: {
+      $type: BinopExpression,
+      Kind: Add,
+      Left: {
+        $type: IntExpression,
+        Value: 2,
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 2,
+          EndRow: 1,
+          EndCol: 2
+        }
+      },
+      Right: {
+        $type: IntExpression,
+        Value: 4,
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 6,
+          EndRow: 1,
+          EndCol: 6
+        }
+      },
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 2,
+        EndRow: 1,
+        EndCol: 6
+      }
     },
-    Right: {
-      $type: IntExpression,
-      Value: 4
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 1,
+      EndRow: 1,
+      EndCol: 7
     }
   },
   Right: {
     $type: IntExpression,
-    Value: 5
+    Value: 5,
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 11,
+      EndRow: 1,
+      EndCol: 11
+    }
+  },
+  Location: {
+    $type: Location,
+    StartRow: 1,
+    StartCol: 1,
+    EndRow: 1,
+    EndCol: 11
   }
 }

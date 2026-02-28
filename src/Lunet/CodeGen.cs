@@ -20,7 +20,7 @@ public class CodeGen
     }
     """;
 
-    public static void Generate(Ast ast, string outFilePath)
+    public static void Generate(Ast ast, string outFilePath, Diagnostics diagnostics)
     {
         var moduleName = "hello";
 
@@ -53,7 +53,7 @@ public class CodeGen
         var assemblyName = new AssemblyNameDefinition(moduleName, new Version(1, 0));
         var assembly = AssemblyDefinition.CreateAssembly(assemblyName, moduleName, ModuleKind.Console);
 
-        new Compilation(assembly, referenceAssemblies).Compile(ast);
+        new Compilation(assembly, referenceAssemblies, diagnostics).Compile(ast);
 
         assembly.Write(outFilePath);
         File.WriteAllText(
@@ -63,7 +63,7 @@ public class CodeGen
     }
 }
 
-internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] referenceAssemblies)
+internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] referenceAssemblies, Diagnostics diagnostics)
 {
     private readonly List<string> _importedNamespaces = [];
 
@@ -103,7 +103,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             .Any(m => m.Types.Any(t => t.Namespace == namespaceName));
         if (!found)
         {
-            throw new Exception("bad import");
+            diagnostics.AddError($"Namespace '{namespaceName}' is not found in reference assemblies", import.Location);
         }
         _importedNamespaces.Add(namespaceName);
     }
@@ -140,8 +140,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
     {
         var ilProcessor = mainMethod.Body.GetILProcessor();
 
-        var locals = new Dictionary<string, (TypeReference type, int id)>();
-        var localId = 0;
+        var scope = new Scope();
 
         foreach (var statement in function.Body)
         {
@@ -149,7 +148,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             {
                 case ExpressionStatement expressionStatement:
                     {
-                        var exprType = CompileExpression(ilProcessor, locals, expressionStatement.Expression);
+                        var exprType = CompileExpression(ilProcessor, scope, expressionStatement.Expression);
 
                         if (exprType != assembly.MainModule.TypeSystem.Void)
                         {
@@ -164,16 +163,21 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                             "string" => assembly.MainModule.TypeSystem.String,
                             "int" => assembly.MainModule.TypeSystem.Int32,
                             "bool" => assembly.MainModule.TypeSystem.Boolean,
-                            _ => throw new Exception("Unknown type"),
+                            _ => null,
                         };
-                        var exprType = CompileExpression(ilProcessor, locals, variableDefinitionStatement.Rvalue);
-                        if (realType != exprType)
+                        if (realType == null)
                         {
-                            throw new Exception("Types not match");
+                            diagnostics.AddError($"Unkown type '{variableDefinitionStatement.Type}'", variableDefinitionStatement.TypeLocation);
+                        }
+                        var exprType = CompileExpression(ilProcessor, scope, variableDefinitionStatement.Rvalue);
+                        if (realType != null && exprType != null && realType != exprType)
+                        {
+                            diagnostics.AddError($"Cannot convert type '{exprType.FullName}' to '{realType.FullName}'", variableDefinitionStatement.TypeLocation);
                         }
                         mainMethod.Body.Variables.Add(new VariableDefinition(exprType));
-                        ilProcessor.Emit(OpCodes.Stloc, localId);
-                        locals[variableDefinitionStatement.Name] = (realType, localId++);
+
+                        var local = scope.SetLocal(variableDefinitionStatement.Name, realType);
+                        ilProcessor.Emit(OpCodes.Stloc, local.Id);
                         break;
                     }
                 default:
@@ -184,40 +188,49 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
         ilProcessor.Emit(OpCodes.Ret);
     }
 
-    private TypeReference CompileExpression(ILProcessor ilProcessor, Dictionary<string, (TypeReference type, int id)> locals, IExpression expression)
+    private TypeReference? CompileExpression(ILProcessor ilProcessor, Scope scope, IExpression expression)
     {
         switch (expression)
         {
-            case IdentExpression(string name):
+            case ParenthesisedExpression parenthesisedExpression:
             {
-                if (locals.TryGetValue(name, out var local))
+                return CompileExpression(ilProcessor, scope, parenthesisedExpression.Expression);
+            }
+            case IdentExpression(var name, var location):
+            {
+                if (scope.TryGetLocal(name, out var local))
                 {
-                    ilProcessor.Emit(OpCodes.Ldloc, local.id);
-                    return local.type;
+                    ilProcessor.Emit(OpCodes.Ldloc, local.Id);
+                    return local.Type;
                 }
                 else
                 {
-                    throw new Exception("variable not found");
+                    diagnostics.AddError($"Variable '{name}' is not found", location);
+                    return null;
                 }
             }
-            case StringExpression(string value):
+            case StringExpression(string value, _):
             {
                 ilProcessor.Emit(OpCodes.Ldstr, value);
                 return assembly.MainModule.TypeSystem.String;
             }
-            case IntExpression(int value):
+            case IntExpression(int value, _):
             {
                 ilProcessor.Emit(OpCodes.Ldc_I4, value);
                 return assembly.MainModule.TypeSystem.Int32;
             }
-            case BoolExpression(bool value):
+            case BoolExpression(bool value, _):
             {
                 ilProcessor.Emit(OpCodes.Ldc_I4, value ? 1 : 0);
                 return assembly.MainModule.TypeSystem.Boolean;
             }
-            case UnaryExpression(var kind, var expr):
+            case UnaryExpression(var kind, var expr, var location):
             {
-                var type = CompileExpression(ilProcessor, locals, expr);
+                var type = CompileExpression(ilProcessor, scope, expr);
+                if (type == null)
+                {
+                    return null;
+                }
                 switch (kind)
                 {
                     case UnaryKind.Not:
@@ -228,7 +241,8 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                         }
                         else
                         {
-                            throw new Exception("bad type");
+                            diagnostics.AddError($"Operator 'not' cannot be applied to operand of type '{type.FullName}'", location);
+                            return null;
                         }
                     default:
                         throw new ArgumentOutOfRangeException(nameof(kind));
@@ -236,7 +250,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             }
             case BinopExpression binop:
             {
-                return CompileBinop(ilProcessor, locals, binop);
+                return CompileBinop(ilProcessor, scope, binop);
             }
             case FunctionCallExpression funcCall:
             {
@@ -257,16 +271,26 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     throw new NotImplementedException();
                 }
 
-                var className = string.Join(".", funcCall.Name.Path.Path);
-                var methodName = funcCall.Name.Ident;
                 var parameterTypes = new List<TypeReference>();
 
                 foreach (var arg in funcCall.Args)
                 {
-                    parameterTypes.Add(CompileExpression(ilProcessor, locals, arg));
+                    var parameterType = CompileExpression(ilProcessor, scope, arg);
+                    if (parameterType == null)
+                    {
+                        return null;
+                    }
+                    parameterTypes.Add(parameterType);
                 }
 
+                var className = string.Join(".", funcCall.Name.Path.Path);
+                var methodName = funcCall.Name.Ident;
                 var method = FindStaticMethod(className, methodName, parameterTypes);
+                if (method == null)
+                {
+                    diagnostics.AddError($"Could not find method '{className}.{methodName}'", funcCall.Name.Location);
+                    return null;
+                }
                 var methodRef = assembly.MainModule.ImportReference(method);
 
                 ilProcessor.Emit(OpCodes.Call, methodRef);
@@ -279,14 +303,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
         }
     }
 
-    private TypeReference CompileBinop(ILProcessor ilProcessor, Dictionary<string, (TypeReference type, int id)> locals, BinopExpression binop)
+    private TypeReference? CompileBinop(ILProcessor ilProcessor, Scope scope, BinopExpression binop)
     {
         switch (binop.Kind)
         {
             case BinopKind.Mul:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -295,13 +325,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.Div:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -310,13 +347,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.Add:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -325,13 +369,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.Sub:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -340,13 +391,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.Concat:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.String
                     && rightType == assembly.MainModule.TypeSystem.String)
                 {
@@ -354,14 +412,21 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
 
             case BinopKind.Equal:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -370,13 +435,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.NotEqual:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -387,25 +459,31 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.And:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
 
                 var falseLabel = ilProcessor.Create(OpCodes.Ldc_I4_0);
                 var afterLabel = ilProcessor.Create(OpCodes.Nop);
 
                 ilProcessor.Emit(OpCodes.Brfalse, falseLabel);
 
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
 
                 ilProcessor.Emit(OpCodes.Br, afterLabel);
 
                 ilProcessor.Append(falseLabel);
                 ilProcessor.Append(afterLabel);
 
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Boolean
                     && rightType == assembly.MainModule.TypeSystem.Boolean)
                 {
@@ -413,24 +491,30 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.Or:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
 
                 var trueLabel = ilProcessor.Create(OpCodes.Ldc_I4_1);
                 var afterLabel = ilProcessor.Create(OpCodes.Nop);
 
                 ilProcessor.Emit(OpCodes.Brtrue, trueLabel);
 
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
 
                 ilProcessor.Emit(OpCodes.Br, afterLabel);
 
                 ilProcessor.Append(trueLabel);
                 ilProcessor.Append(afterLabel);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
 
                 if (leftType == assembly.MainModule.TypeSystem.Boolean
                     && rightType == assembly.MainModule.TypeSystem.Boolean)
@@ -439,14 +523,21 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
 
             case BinopKind.Greater:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -455,13 +546,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.GreaterOrEqual:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -472,13 +570,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.Less:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -487,13 +592,20 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
             case BinopKind.LessOrEqual:
             {
-                var leftType = CompileExpression(ilProcessor, locals, binop.Left);
-                var rightType = CompileExpression(ilProcessor, locals, binop.Right);
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
                 if (leftType == assembly.MainModule.TypeSystem.Int32
                     && rightType == assembly.MainModule.TypeSystem.Int32)
                 {
@@ -504,7 +616,8 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 }
                 else
                 {
-                    throw new Exception("types not match");
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
                 }
             }
 
@@ -526,8 +639,30 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             .ToArray();
         if (methods.Length != 1)
         {
-            throw new Exception();
+            return null;
         }
         return methods.First();
+    }
+}
+
+internal record struct LocalVariable(int Id, TypeReference? Type);
+
+internal class Scope
+{
+    private readonly Dictionary<string, LocalVariable> _locals = [];
+    private int _localId;
+
+    public bool TryGetLocal(string name, out LocalVariable local)
+    {
+        return _locals.TryGetValue(name, out local);
+    }
+
+    public LocalVariable SetLocal(string name, TypeReference? type)
+    {
+        // if (_locals.ContainsKey(name))
+        // {
+        //     return null;
+        // }
+        return _locals[name] = new(_localId++, type);
     }
 }

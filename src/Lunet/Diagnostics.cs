@@ -41,7 +41,7 @@ public enum DiagnosticSeverity
     Error, Warning
 }
 
-public record struct Diagnostic(DiagnosticSeverity Severity, Location Location, string Message);
+public record struct Diagnostic(DiagnosticSeverity Severity, string Message, Location Location);
 
 public class Diagnostics : IEnumerable<Diagnostic>
 {
@@ -58,8 +58,8 @@ public class Diagnostics : IEnumerable<Diagnostic>
         _diagnostics.Add(diagnostic);
     }
 
-    public void AddError(Location location, string message)
+    public void AddError(string message, Location location)
     {
-        _diagnostics.Add(new Diagnostic(DiagnosticSeverity.Error, location, message));
+        _diagnostics.Add(new Diagnostic(DiagnosticSeverity.Error, message, location));
     }
 }

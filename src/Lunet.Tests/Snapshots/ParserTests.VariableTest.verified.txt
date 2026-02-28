@@ -8,6 +8,13 @@
         Path: [
           System
         ]
+      },
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 1,
+        EndRow: 1,
+        EndCol: 13
       }
     },
     {
@@ -20,7 +27,21 @@
           Type: string,
           Rvalue: {
             $type: StringExpression,
-            Value: Hello, world
+            Value: Hello, world,
+            Location: {
+              $type: Location,
+              StartRow: 4,
+              StartCol: 30,
+              EndRow: 4,
+              EndCol: 43
+            }
+          },
+          TypeLocation: {
+            $type: Location,
+            StartRow: 4,
+            StartCol: 21,
+            EndRow: 4,
+            EndCol: 26
           }
         },
         {
@@ -36,14 +57,35 @@
                   Console
                 ]
               },
-              Ident: WriteLine
+              Ident: WriteLine,
+              Location: {
+                $type: Location,
+                StartRow: 5,
+                StartCol: 5,
+                EndRow: 5,
+                EndCol: 29
+              }
             },
             Args: [
               {
                 $type: IdentExpression,
-                Name: greeting
+                Name: greeting,
+                Location: {
+                  $type: Location,
+                  StartRow: 5,
+                  StartCol: 31,
+                  EndRow: 5,
+                  EndCol: 38
+                }
               }
-            ]
+            ],
+            Location: {
+              $type: Location,
+              StartRow: 5,
+              StartCol: 5,
+              EndRow: 5,
+              EndCol: 39
+            }
           }
         }
       ]

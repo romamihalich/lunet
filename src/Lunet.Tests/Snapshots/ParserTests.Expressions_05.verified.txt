@@ -6,11 +6,32 @@
     Kind: Equal,
     Left: {
       $type: IdentExpression,
-      Name: n
+      Name: n,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 1,
+        EndRow: 1,
+        EndCol: 1
+      }
     },
     Right: {
       $type: IntExpression,
-      Value: 5
+      Value: 5,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 6,
+        EndRow: 1,
+        EndCol: 6
+      }
+    },
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 1,
+      EndRow: 1,
+      EndCol: 6
     }
   },
   Right: {
@@ -21,28 +42,101 @@
       Kind: NotEqual,
       Left: {
         $type: IdentExpression,
-        Name: n
+        Name: n,
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 11,
+          EndRow: 1,
+          EndCol: 11
+        }
       },
       Right: {
         $type: IntExpression,
-        Value: 2
+        Value: 2,
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 16,
+          EndRow: 1,
+          EndCol: 16
+        }
+      },
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 11,
+        EndRow: 1,
+        EndCol: 16
       }
     },
     Right: {
       $type: UnaryExpression,
       Kind: Not,
       Expression: {
-        $type: BinopExpression,
-        Kind: GreaterOrEqual,
-        Left: {
-          $type: IdentExpression,
-          Name: n
+        $type: ParenthesisedExpression,
+        Expression: {
+          $type: BinopExpression,
+          Kind: GreaterOrEqual,
+          Left: {
+            $type: IdentExpression,
+            Name: n,
+            Location: {
+              $type: Location,
+              StartRow: 1,
+              StartCol: 27,
+              EndRow: 1,
+              EndCol: 27
+            }
+          },
+          Right: {
+            $type: IntExpression,
+            Value: 10,
+            Location: {
+              $type: Location,
+              StartRow: 1,
+              StartCol: 32,
+              EndRow: 1,
+              EndCol: 33
+            }
+          },
+          Location: {
+            $type: Location,
+            StartRow: 1,
+            StartCol: 27,
+            EndRow: 1,
+            EndCol: 33
+          }
         },
-        Right: {
-          $type: IntExpression,
-          Value: 10
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 26,
+          EndRow: 1,
+          EndCol: 34
         }
+      },
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 22,
+        EndRow: 1,
+        EndCol: 34
       }
+    },
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 11,
+      EndRow: 1,
+      EndCol: 34
     }
+  },
+  Location: {
+    $type: Location,
+    StartRow: 1,
+    StartCol: 1,
+    EndRow: 1,
+    EndCol: 34
   }
 }

@@ -119,7 +119,7 @@ public class Lexer
         var loc = Location.Combine(startLoc, endLoc);
         if (kind == TokenKind.Illegal)
         {
-            _diagnostics.AddError(loc, "Illegal token");
+            _diagnostics.AddError("Illegal token", loc);
         }
         return new(kind, null, loc);
     }
@@ -176,7 +176,7 @@ public class Lexer
         }
         else
         {
-            _diagnostics.AddError(loc, "Unclosed string literal");
+            _diagnostics.AddError("Unclosed string literal", loc);
             return new(TokenKind.Illegal, null, loc);
         }
     }

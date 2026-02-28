@@ -3,10 +3,31 @@
   Kind: Concat,
   Left: {
     $type: StringExpression,
-    Value: Hello, 
+    Value: Hello, ,
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 1,
+      EndRow: 1,
+      EndCol: 9
+    }
   },
   Right: {
     $type: IdentExpression,
-    Name: name
+    Name: name,
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 14,
+      EndRow: 1,
+      EndCol: 17
+    }
+  },
+  Location: {
+    $type: Location,
+    StartRow: 1,
+    StartCol: 1,
+    EndRow: 1,
+    EndCol: 17
   }
 }

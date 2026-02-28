@@ -3,25 +3,29 @@ namespace Lunet;
 public record Ast(IReadOnlyList<ITopLevelStatement> Statements);
 
 public interface ITopLevelStatement;
-public record ImportStatement(NamespacePath Path) : ITopLevelStatement;
+public record ImportStatement(NamespacePath Path, Location Location) : ITopLevelStatement;
 public record FunctionStatement(string Name, IReadOnlyList<IStatement> Body) : ITopLevelStatement;
 
 public interface IStatement;
 public record ExpressionStatement(FunctionCallExpression Expression) : IStatement;
-public record VariableDefinitionStatement(string Name, string Type, IExpression Rvalue) : IStatement;
+public record VariableDefinitionStatement(string Name, string Type, IExpression Rvalue, Location TypeLocation) : IStatement;
 
-public interface IExpression;
-public record IdentExpression(string Name) : IExpression;
-public record StringExpression(string Value) : IExpression;
-public record IntExpression(int Value) : IExpression;
-public record BoolExpression(bool Value) : IExpression;
+public interface IExpression
+{
+    public Location Location { get; }
+}
+public record ParenthesisedExpression(IExpression Expression, Location Location) : IExpression;
+public record IdentExpression(string Name, Location Location) : IExpression;
+public record StringExpression(string Value, Location Location) : IExpression;
+public record IntExpression(int Value, Location Location) : IExpression;
+public record BoolExpression(bool Value, Location Location) : IExpression;
 
 public enum UnaryKind
 {
     Not,
 }
 
-public record UnaryExpression(UnaryKind Kind, IExpression Expression) : IExpression;
+public record UnaryExpression(UnaryKind Kind, IExpression Expression, Location Location) : IExpression;
 
 public enum BinopKind
 {
@@ -49,6 +53,24 @@ public static class BinopFacts
         BinopKind.LessOrEqual    => MaxPrecedence - 3,
         BinopKind.And            => MaxPrecedence - 4,
         BinopKind.Or             => MaxPrecedence - 5,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    public static string GetText(this BinopKind kind) => kind switch
+    {
+        BinopKind.Mul            => "*",
+        BinopKind.Div            => "/",
+        BinopKind.Add            => "+",
+        BinopKind.Sub            => "-",
+        BinopKind.Concat         => "..",
+        BinopKind.Equal          => "==",
+        BinopKind.NotEqual       => "~=",
+        BinopKind.Greater        => ">",
+        BinopKind.GreaterOrEqual => ">=",
+        BinopKind.Less           => "<",
+        BinopKind.LessOrEqual    => "<=",
+        BinopKind.And            => "and",
+        BinopKind.Or             => "or",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -115,11 +137,11 @@ public static class BinopFacts
     }
 }
 
-public record BinopExpression(BinopKind Kind, IExpression Left, IExpression Right) : IExpression;
+public record BinopExpression(BinopKind Kind, IExpression Left, IExpression Right, Location Location) : IExpression;
 
-public record FunctionCallExpression(QualifiedIdentExpression Name, IReadOnlyList<IExpression> Args) : IExpression;
+public record FunctionCallExpression(QualifiedIdentExpression Name, IReadOnlyList<IExpression> Args, Location Location) : IExpression;
 
-public record QualifiedIdentExpression(NamespacePath Path, string? Ident) : IExpression;
+public record QualifiedIdentExpression(NamespacePath Path, string? Ident, Location Location) : IExpression;
 
 public record NamespacePath(IReadOnlyList<string> Path);
 
@@ -195,7 +217,7 @@ public class Parser
 
     private ImportStatement? ParseImportStatement()
     {
-        if (!ExpectToken(TokenKind.Import, out _))
+        if (!ExpectToken(TokenKind.Import, out var importToken))
         {
             return null;
         }
@@ -205,7 +227,9 @@ public class Parser
             return null;
         }
 
-        return new(new([(string)ident.Value!]));
+        var location = Location.Combine(importToken.Location, ident.Location);
+
+        return new(new([(string)ident.Value!]), location);
     }
 
     private IStatement? ParseStatement()
@@ -221,10 +245,14 @@ public class Parser
                 }
                 if (Peek().Kind == TokenKind.OParen)
                 {
-                    var args = ParseArgs();
-                    if (args == null) return null;
+                    var (args, argsLocation) = ParseArgs();
+                    if (args == null)
+                    {
+                        return null;
+                    }
+                    var location = Location.Combine(identExpr.Location, argsLocation);
                     return new ExpressionStatement(
-                        new FunctionCallExpression(identExpr, args)
+                        new FunctionCallExpression(identExpr, args, location)
                     );
                 }
                 else
@@ -248,12 +276,12 @@ public class Parser
             return null;
         }
 
-        if (!ExpectToken(TokenKind.Ident, out var nameTok))
+        if (!ExpectToken(TokenKind.Ident, out var nameToken))
         {
             return null;
         }
 
-        var name = (string)nameTok.Value!;
+        var name = (string)nameToken.Value!;
 
         if (!ExpectToken(TokenKind.Colon))
         {
@@ -261,12 +289,12 @@ public class Parser
         }
 
         // TODO: qualified name
-        if (!ExpectToken(TokenKind.Ident, out var typeTok))
+        if (!ExpectToken(TokenKind.Ident, out var typeToken))
         {
             return null;
         }
 
-        var type = (string)typeTok.Value!;
+        var type = (string)typeToken.Value!;
 
         if (!ExpectToken(TokenKind.Equals))
         {
@@ -280,25 +308,25 @@ public class Parser
             return null;
         }
 
-        return new VariableDefinitionStatement(name, type, rvalue);
+        return new VariableDefinitionStatement(name, type, rvalue, typeToken.Location);
     }
 
-    private IReadOnlyList<IExpression>? ParseArgs()
+    private (IReadOnlyList<IExpression>?, Location) ParseArgs()
     {
-        if (!ExpectToken(TokenKind.OParen, out _)) return null;
+        if (!ExpectToken(TokenKind.OParen, out var oparenToken)) return (null, default);
 
         var expr = ParseExpression();
 
         if (expr == null)
         {
-            return null;
+            return (null, default);
         }
 
         // TODO: support for multiple args
 
-        if (!ExpectToken(TokenKind.CParen, out _)) return null;
+        if (!ExpectToken(TokenKind.CParen, out var cparenToken)) return (null, default);
 
-        return [expr];
+        return ([expr], Location.Combine(oparenToken.Location, cparenToken.Location));
     }
 
     private QualifiedIdentExpression? ParseQualifiedIdentExpression()
@@ -312,29 +340,40 @@ public class Parser
         if (peek.Kind == TokenKind.DoubleColon)
         {
             var path = new List<string>() { (string)firstIdent.Value! };
+            Location lastLocation = default;
             while (Peek().Kind == TokenKind.DoubleColon)
             {
                 NextToken();
                 if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
+                lastLocation = ident.Location;
                 path.Add((string)ident.Value!);
             }
             if (Peek().Kind == TokenKind.Dot)
             {
                 NextToken();
                 if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
-                return new QualifiedIdentExpression(new(path), (string)ident.Value!);
+                var location = Location.Combine(firstIdent.Location, ident.Location);
+                return new QualifiedIdentExpression(new(path), (string)ident.Value!, location);
             }
-            return new QualifiedIdentExpression(new(path), null);
+            else
+            {
+                var location = lastLocation != default
+                    ? Location.Combine(firstIdent.Location, lastLocation)
+                    : firstIdent.Location;
+                
+                return new QualifiedIdentExpression(new(path), null, location);
+            }
         }
         else if (peek.Kind == TokenKind.Dot)
         {
             NextToken();
             if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
-            return new QualifiedIdentExpression(new([(string)firstIdent.Value!]), (string)ident.Value!);
+            var location = Location.Combine(firstIdent.Location, ident.Location);
+            return new QualifiedIdentExpression(new([(string)firstIdent.Value!]), (string)ident.Value!, location);
         }
         else
         {
-            return new QualifiedIdentExpression(new([]), (string)firstIdent.Value!);
+            return new QualifiedIdentExpression(new([]), (string)firstIdent.Value!, firstIdent.Location);
         }
     }
 
@@ -367,7 +406,8 @@ public class Parser
             {
                 return null;
             }
-            left = new BinopExpression(kind, left, right);
+            var location = Location.Combine(left.Location, right.Location);
+            left = new BinopExpression(kind, left, right, location);
         }
         return left;
     }
@@ -376,13 +416,14 @@ public class Parser
     {
         if (Peek().Kind == TokenKind.Not)
         {
-            NextToken();
+            var notToken = NextToken();
             var expr = ParseUnaryExpression();
             if (expr == null)
             {
                 return null;
             }
-            return new UnaryExpression(UnaryKind.Not, expr);
+            var location = Location.Combine(notToken.Location, expr.Location);
+            return new UnaryExpression(UnaryKind.Not, expr, location);
         }
         return ParsePrimaryExpression();
     }
@@ -393,19 +434,19 @@ public class Parser
         switch (t.Kind)
         {
             case TokenKind.Ident:
-                return new IdentExpression((string)t.Value!);
+                return new IdentExpression((string)t.Value!, t.Location);
 
             case TokenKind.String:
-                return new StringExpression((string)t.Value!);
+                return new StringExpression((string)t.Value!, t.Location);
 
             case TokenKind.Int:
-                return new IntExpression((int)t.Value!);
+                return new IntExpression((int)t.Value!, t.Location);
 
             case TokenKind.True:
-                return new BoolExpression(true);
+                return new BoolExpression(true, t.Location);
 
             case TokenKind.False:
-                return new BoolExpression(false);
+                return new BoolExpression(false, t.Location);
 
             case TokenKind.OParen:
             {
@@ -414,12 +455,16 @@ public class Parser
                 {
                     return null;
                 }
-                ExpectToken(TokenKind.CParen);
-                return expr;
+                if (!ExpectToken(TokenKind.CParen, out var cparenToken))
+                {
+                    return null;
+                }
+                var location = Location.Combine(t.Location, cparenToken.Location);
+                return new ParenthesisedExpression(expr, location);
             }
 
             default:
-                _diagnostics.AddError(t.Location, "Expected expression");
+                _diagnostics.AddError("Expected expression", t.Location);
                 return null;
         }
     }
@@ -429,7 +474,7 @@ public class Parser
         t = NextToken();
         if (t.Kind != kind)
         {
-            _diagnostics.AddError(t.Location, $"Unexpected token \"{t.Kind}\"");
+            _diagnostics.AddError($"Unexpected token '{t.Kind}'", t.Location);
             return false;
         }
 

@@ -8,6 +8,13 @@
         Path: [
           System
         ]
+      },
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 1,
+        EndRow: 1,
+        EndCol: 13
       }
     },
     {
@@ -27,14 +34,35 @@
                   Console
                 ]
               },
-              Ident: WriteLine
+              Ident: WriteLine,
+              Location: {
+                $type: Location,
+                StartRow: 4,
+                StartCol: 5,
+                EndRow: 4,
+                EndCol: 29
+              }
             },
             Args: [
               {
                 $type: StringExpression,
-                Value: Hello, world
+                Value: Hello, world,
+                Location: {
+                  $type: Location,
+                  StartRow: 4,
+                  StartCol: 31,
+                  EndRow: 4,
+                  EndCol: 44
+                }
               }
-            ]
+            ],
+            Location: {
+              $type: Location,
+              StartRow: 4,
+              StartCol: 5,
+              EndRow: 4,
+              EndCol: 45
+            }
           }
         }
       ]

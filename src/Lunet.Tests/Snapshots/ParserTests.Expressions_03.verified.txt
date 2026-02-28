@@ -6,11 +6,32 @@
     Kind: Greater,
     Left: {
       $type: IdentExpression,
-      Name: x
+      Name: x,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 1,
+        EndRow: 1,
+        EndCol: 1
+      }
     },
     Right: {
       $type: IntExpression,
-      Value: 3
+      Value: 3,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 5,
+        EndRow: 1,
+        EndCol: 5
+      }
+    },
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 1,
+      EndRow: 1,
+      EndCol: 5
     }
   },
   Right: {
@@ -18,11 +39,39 @@
     Kind: Less,
     Left: {
       $type: IdentExpression,
-      Name: x
+      Name: x,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 11,
+        EndRow: 1,
+        EndCol: 11
+      }
     },
     Right: {
       $type: IntExpression,
-      Value: 9
+      Value: 9,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 15,
+        EndRow: 1,
+        EndCol: 15
+      }
+    },
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 11,
+      EndRow: 1,
+      EndCol: 15
     }
+  },
+  Location: {
+    $type: Location,
+    StartRow: 1,
+    StartCol: 1,
+    EndRow: 1,
+    EndCol: 15
   }
 }

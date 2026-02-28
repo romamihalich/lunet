@@ -27,6 +27,26 @@ var ast = parser.Parse();
 
 if (diagnostics.HasError)
 {
+    PrintDiagnostics(diagnostics);
+    return 1;
+}
+
+var outFilePath = Path.ChangeExtension(sourceFilePath, ".dll");
+
+CodeGen.Generate(ast, outFilePath, diagnostics);
+
+if (diagnostics.HasError)
+{
+    PrintDiagnostics(diagnostics);
+    return 1;
+}
+
+Console.WriteLine($"Generated file: {outFilePath}");
+
+return 0;
+
+static void PrintDiagnostics(Diagnostics diagnostics)
+{
     var foreground = Console.ForegroundColor;
     foreach (var diagnostic in diagnostics)
     {
@@ -53,11 +73,4 @@ if (diagnostics.HasError)
         Console.Error.WriteLine($"{severity}:{row}:{col}: {message}");
     }
     Console.ForegroundColor = foreground;
-    return 1;
 }
-
-var outFilePath = Path.ChangeExtension(sourceFilePath, ".dll");
-CodeGen.Generate(ast, outFilePath);
-Console.WriteLine($"Generated file: {outFilePath}");
-
-return 0;

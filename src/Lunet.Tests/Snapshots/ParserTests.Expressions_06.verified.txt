@@ -3,26 +3,75 @@
   Kind: LessOrEqual,
   Left: {
     $type: BinopExpression,
-    Kind: Minus,
+    Kind: Sub,
     Left: {
       $type: BinopExpression,
       Kind: Div,
       Left: {
         $type: IntExpression,
-        Value: 10
+        Value: 10,
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 1,
+          EndRow: 1,
+          EndCol: 2
+        }
       },
       Right: {
         $type: IntExpression,
-        Value: 2
+        Value: 2,
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 6,
+          EndRow: 1,
+          EndCol: 6
+        }
+      },
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 1,
+        EndRow: 1,
+        EndCol: 6
       }
     },
     Right: {
       $type: IntExpression,
-      Value: 3
+      Value: 3,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 10,
+        EndRow: 1,
+        EndCol: 10
+      }
+    },
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 1,
+      EndRow: 1,
+      EndCol: 10
     }
   },
   Right: {
     $type: IdentExpression,
-    Name: f
+    Name: f,
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 15,
+      EndRow: 1,
+      EndCol: 15
+    }
+  },
+  Location: {
+    $type: Location,
+    StartRow: 1,
+    StartCol: 1,
+    EndRow: 1,
+    EndCol: 15
   }
 }

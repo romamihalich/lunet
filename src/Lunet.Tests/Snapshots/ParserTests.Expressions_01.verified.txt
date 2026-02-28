@@ -1,20 +1,55 @@
 ﻿{
   $type: BinopExpression,
-  Kind: Plus,
+  Kind: Add,
   Left: {
     $type: IntExpression,
-    Value: 2
+    Value: 2,
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 1,
+      EndRow: 1,
+      EndCol: 1
+    }
   },
   Right: {
     $type: BinopExpression,
     Kind: Mul,
     Left: {
       $type: IntExpression,
-      Value: 4
+      Value: 4,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 5,
+        EndRow: 1,
+        EndCol: 5
+      }
     },
     Right: {
       $type: IntExpression,
-      Value: 5
+      Value: 5,
+      Location: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 9,
+        EndRow: 1,
+        EndCol: 9
+      }
+    },
+    Location: {
+      $type: Location,
+      StartRow: 1,
+      StartCol: 5,
+      EndRow: 1,
+      EndCol: 9
     }
+  },
+  Location: {
+    $type: Location,
+    StartRow: 1,
+    StartCol: 1,
+    EndRow: 1,
+    EndCol: 9
   }
 }
