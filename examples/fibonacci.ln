@@ -1,0 +1,13 @@
+import System
+
+function main()
+    local a: int = 0
+    local b: int = 1
+
+    while a < 100 do
+        System::Console.WriteLine(a)
+        local next: int = a + b
+        a = b
+        b = next
+    end
+end
