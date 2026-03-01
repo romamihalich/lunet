@@ -23,6 +23,9 @@ public enum TokenKind
     And,
     Or,
     Not,
+    If,
+    Then,
+    Else,
 
     // symbols
     OParen,
@@ -210,6 +213,9 @@ public class Lexer
             "and"      => kind = TokenKind.And,
             "or"       => kind = TokenKind.Or,
             "not"      => kind = TokenKind.Not,
+            "if"       => kind = TokenKind.If,
+            "then"     => kind = TokenKind.Then,
+            "else"     => kind = TokenKind.Else,
             _          => kind = default,
         };
 

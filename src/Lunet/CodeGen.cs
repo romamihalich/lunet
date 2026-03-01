@@ -140,9 +140,17 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
     {
         var ilProcessor = mainMethod.Body.GetILProcessor();
 
-        var scope = new Scope();
+        var scope = new FunctionScope();
 
-        foreach (var statement in function.Body)
+        CompileBlock(ilProcessor, scope, mainMethod, function.Body);
+
+        ilProcessor.Emit(OpCodes.Ret);
+    }
+
+    private void CompileBlock(ILProcessor ilProcessor, FunctionScope scope, MethodDefinition mainMethod, IReadOnlyList<IStatement> block)
+    {
+        using var _ = scope.EnterScope();
+        foreach (var statement in block)
         {
             switch (statement)
             {
@@ -180,15 +188,33 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                         ilProcessor.Emit(OpCodes.Stloc, local.Id);
                         break;
                     }
+                case IfStatement ifStatement:
+                    {
+                        var condType = CompileExpression(ilProcessor, scope, ifStatement.Condition);
+                        if (condType != assembly.MainModule.TypeSystem.Boolean)
+                        {
+                            diagnostics.AddError("Condition must be of type bool", ifStatement.Condition.Location);
+                        }
+                        var elseLabel = ilProcessor.Create(OpCodes.Nop);
+                        var afterLabel = ilProcessor.Create(OpCodes.Nop);
+                        ilProcessor.Emit(OpCodes.Brfalse, elseLabel);
+                        CompileBlock(ilProcessor, scope, mainMethod, ifStatement.Block);
+                        ilProcessor.Emit(OpCodes.Br, afterLabel);
+                        ilProcessor.Append(elseLabel);
+                        if (ifStatement.ElseBlock != null)
+                        {
+                            CompileBlock(ilProcessor, scope, mainMethod, ifStatement.ElseBlock);
+                        }
+                        ilProcessor.Append(afterLabel);
+                        break;
+                    }
                 default:
                     throw new ArgumentOutOfRangeException(nameof(statement));
             }
         }
-
-        ilProcessor.Emit(OpCodes.Ret);
     }
 
-    private TypeReference? CompileExpression(ILProcessor ilProcessor, Scope scope, IExpression expression)
+    private TypeReference? CompileExpression(ILProcessor ilProcessor, FunctionScope scope, IExpression expression)
     {
         switch (expression)
         {
@@ -303,7 +329,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
         }
     }
 
-    private TypeReference? CompileBinop(ILProcessor ilProcessor, Scope scope, BinopExpression binop)
+    private TypeReference? CompileBinop(ILProcessor ilProcessor, FunctionScope scope, BinopExpression binop)
     {
         switch (binop.Kind)
         {
@@ -647,22 +673,51 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
 
 internal record struct LocalVariable(int Id, TypeReference? Type);
 
-internal class Scope
+internal class FunctionScope
 {
-    private readonly Dictionary<string, LocalVariable> _locals = [];
+    private readonly List<Dictionary<string, LocalVariable>> _locals;
     private int _localId;
+
+    public FunctionScope()
+    {
+        _locals = [];
+    }
+
+    public IDisposable EnterScope()
+    {
+        _locals.Add([]);
+        return new Dummy(this);
+    }
+
+    public void LeaveScope()
+    {
+        _locals.RemoveAt(_locals.Count - 1);
+    }
 
     public bool TryGetLocal(string name, out LocalVariable local)
     {
-        return _locals.TryGetValue(name, out local);
+        for (int i = _locals.Count - 1; i >= 0; i--)
+        {
+            if (_locals[i].TryGetValue(name, out local))
+            {
+                return true;
+            }
+        }
+        local = default;
+        return false;
     }
 
     public LocalVariable SetLocal(string name, TypeReference? type)
     {
-        // if (_locals.ContainsKey(name))
-        // {
-        //     return null;
-        // }
-        return _locals[name] = new(_localId++, type);
+        return _locals[^1][name] = new(_localId++, type);
+    }
+
+    private class Dummy(FunctionScope? scope) : IDisposable
+    {
+        public void Dispose()
+        {
+            scope?.LeaveScope();
+            scope = null;
+        }
     }
 }

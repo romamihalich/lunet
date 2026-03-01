@@ -17,6 +17,14 @@ function main()
     -- ">", ">=", "<", "<="
     -- "(", ")"
 
+    if t and true then
+        local greeting: string = "Hello from TRUE block"
+        System::Console.WriteLine(greeting)
+    else
+        local greeting: string = "Hello from FALSE block"
+        System::Console.WriteLine(greeting)
+    end
+
     System::Console.WriteLine(greeting)
     System::Console.WriteLine(number)
     System::Console.WriteLine(t)
