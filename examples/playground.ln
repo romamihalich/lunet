@@ -25,6 +25,12 @@ function main()
         System::Console.WriteLine(greeting)
     end
 
+    local i: int = 1
+    while i <= 3 do
+        System::Console.WriteLine("WHILE")
+        i = i + 1
+    end
+
     System::Console.WriteLine(greeting)
     System::Console.WriteLine(number)
     System::Console.WriteLine(t)

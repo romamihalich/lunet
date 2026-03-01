@@ -26,6 +26,8 @@ public enum TokenKind
     If,
     Then,
     Else,
+    While,
+    Do,
 
     // symbols
     OParen,
@@ -216,6 +218,8 @@ public class Lexer
             "if"       => kind = TokenKind.If,
             "then"     => kind = TokenKind.Then,
             "else"     => kind = TokenKind.Else,
+            "while"    => kind = TokenKind.While,
+            "do"       => kind = TokenKind.Do,
             _          => kind = default,
         };
 

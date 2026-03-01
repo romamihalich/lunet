@@ -9,7 +9,9 @@ public record FunctionStatement(string Name, IReadOnlyList<IStatement> Body) : I
 public interface IStatement;
 public record ExpressionStatement(FunctionCallExpression Expression) : IStatement;
 public record VariableDefinitionStatement(string Name, string Type, IExpression Rvalue, Location TypeLocation) : IStatement;
+public record AssignmentStatement(QualifiedIdentExpression Name, IExpression Rvalue) : IStatement;
 public record IfStatement(IExpression Condition, IReadOnlyList<IStatement> Block, IReadOnlyList<IStatement>? ElseBlock) : IStatement;
+public record WhileStatement(IExpression Condition, IReadOnlyList<IStatement> Block) : IStatement;
 
 public interface IExpression
 {
@@ -254,6 +256,16 @@ public class Parser
                         new FunctionCallExpression(identExpr, args, location)
                     );
                 }
+                else if (Peek().Kind == TokenKind.Equals)
+                {
+                    NextToken();
+                    var rvalue = ParseExpression();
+                    if (rvalue == null)
+                    {
+                        return null;
+                    }
+                    return new AssignmentStatement(identExpr, rvalue);
+                }
                 else
                 {
                     throw new NotImplementedException();
@@ -266,6 +278,10 @@ public class Parser
             case TokenKind.If:
             {
                 return ParseIfStatement();
+            }
+            case TokenKind.While:
+            {
+                return ParseWhileStatement();
             }
             default:
                 return null;
@@ -347,6 +363,34 @@ public class Parser
         }
 
         return new IfStatement(cond, block, elseBlock);
+    }
+
+    private WhileStatement? ParseWhileStatement()
+    {
+        if (!ExpectToken(TokenKind.While))
+        {
+            return null;
+        }
+
+        var cond = ParseExpression();
+        if (cond == null)
+        {
+            return null;
+        }
+
+        if (!ExpectToken(TokenKind.Do))
+        {
+            return null;
+        }
+
+        var block = ParseBlock();
+
+        if (!ExpectToken(TokenKind.End))
+        {
+            return null;
+        }
+
+        return new WhileStatement(cond, block);
     }
 
     private IReadOnlyList<IStatement> ParseBlock()

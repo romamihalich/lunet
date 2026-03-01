@@ -208,6 +208,43 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                         ilProcessor.Append(afterLabel);
                         break;
                     }
+                case WhileStatement whileStatement:
+                    {
+                        var loopStart = ilProcessor.Create(OpCodes.Nop);
+                        var loopEnd = ilProcessor.Create(OpCodes.Nop);
+
+                        ilProcessor.Append(loopStart);
+                        var condType = CompileExpression(ilProcessor, scope, whileStatement.Condition);
+                        if (condType != assembly.MainModule.TypeSystem.Boolean)
+                        {
+                            diagnostics.AddError("Condition must be of type bool", whileStatement.Condition.Location);
+                        }
+                        ilProcessor.Emit(OpCodes.Brfalse, loopEnd);
+                        CompileBlock(ilProcessor, scope, mainMethod, whileStatement.Block);
+                        ilProcessor.Emit(OpCodes.Br, loopStart);
+                        ilProcessor.Append(loopEnd);
+                        break;
+                    }
+                case AssignmentStatement(var name, var rvalue):
+                    {
+                        var hasLocal = scope.TryGetLocal(name.Ident, out var local);
+                        if (!hasLocal)
+                        {
+                            diagnostics.AddError($"Variable '{name}' is not found", name.Location);
+                        }
+                        var rvalueType = CompileExpression(ilProcessor, scope, rvalue);
+                        if (rvalueType != null
+                            && local.Type != null
+                            && rvalueType != local.Type)
+                        {
+                            diagnostics.AddError($"Cannot convert type '{rvalueType.FullName}' to '{local.Type.FullName}'", rvalue.Location);
+                        }
+                        if (hasLocal)
+                        {
+                            ilProcessor.Emit(OpCodes.Stloc, local.Id);
+                        }
+                        break;
+                    }
                 default:
                     throw new ArgumentOutOfRangeException(nameof(statement));
             }
