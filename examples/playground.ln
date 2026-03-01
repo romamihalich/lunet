@@ -43,4 +43,7 @@ function main()
 
     System::Console.Write("false or f: ")
     System::Console.WriteLine(false or f)
+
+    System::Console.Write("5 % 2 = ")
+    System::Console.WriteLine(5 % 2)
 end

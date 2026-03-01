@@ -414,6 +414,28 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
             }
+            case BinopKind.Mod:
+            {
+                var leftType = CompileExpression(ilProcessor, scope, binop.Left);
+                var rightType = CompileExpression(ilProcessor, scope, binop.Right);
+
+                if (leftType == null || rightType == null)
+                {
+                    return null;
+                }
+
+                if (leftType == assembly.MainModule.TypeSystem.Int32
+                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                {
+                    ilProcessor.Emit(OpCodes.Rem);
+                    return assembly.MainModule.TypeSystem.Int32;
+                }
+                else
+                {
+                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    return null;
+                }
+            }
             case BinopKind.Add:
             {
                 var leftType = CompileExpression(ilProcessor, scope, binop.Left);

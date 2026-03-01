@@ -1,0 +1,17 @@
+import System
+
+function main()
+    local i: int = 1
+    while i <= 100 do
+        if i % 15 == 0 then
+            System::Console.WriteLine("FizzBuzz")
+        elseif i % 3 == 0 then
+            System::Console.WriteLine("Fizz")
+        elseif i % 5 == 0 then
+            System::Console.WriteLine("Buzz")
+        else
+            System::Console.WriteLine(i)
+        end
+        i = i + 1
+    end
+end

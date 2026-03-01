@@ -32,7 +32,7 @@ public record UnaryExpression(UnaryKind Kind, IExpression Expression, Location L
 
 public enum BinopKind
 {
-    Mul, Div, Add, Sub, Concat,
+    Mul, Div, Mod, Add, Sub, Concat,
     Equal, NotEqual, And, Or,
     Greater, GreaterOrEqual, Less, LessOrEqual,
 }
@@ -45,8 +45,9 @@ public static class BinopFacts
     {
         BinopKind.Mul            => MaxPrecedence,
         BinopKind.Div            => MaxPrecedence,
-        BinopKind.Add           => MaxPrecedence - 1,
-        BinopKind.Sub          => MaxPrecedence - 1,
+        BinopKind.Mod            => MaxPrecedence,
+        BinopKind.Add            => MaxPrecedence - 1,
+        BinopKind.Sub            => MaxPrecedence - 1,
         BinopKind.Concat         => MaxPrecedence - 2,
         BinopKind.Equal          => MaxPrecedence - 3,
         BinopKind.NotEqual       => MaxPrecedence - 3,
@@ -63,6 +64,7 @@ public static class BinopFacts
     {
         BinopKind.Mul            => "*",
         BinopKind.Div            => "/",
+        BinopKind.Mod            => "%",
         BinopKind.Add            => "+",
         BinopKind.Sub            => "-",
         BinopKind.Concat         => "..",
@@ -87,6 +89,10 @@ public static class BinopFacts
 
             case TokenKind.Slash:
                 kind = BinopKind.Div;
+                return true;
+
+            case TokenKind.Percent:
+                kind = BinopKind.Mod;
                 return true;
 
             case TokenKind.Plus:
@@ -332,7 +338,13 @@ public class Parser
 
     private IfStatement? ParseIfStatement()
     {
-        if (!ExpectToken(TokenKind.If))
+        var elseIf = false;
+        if (Peek().Kind == TokenKind.ElseIf)
+        {
+            elseIf = true;
+            NextToken();
+        }
+        else if (!ExpectToken(TokenKind.If))
         {
             return null;
         }
@@ -351,13 +363,22 @@ public class Parser
         var block = ParseBlock();
 
         IReadOnlyList<IStatement>? elseBlock = null;
-        if (Peek().Kind == TokenKind.Else)
+        if (Peek().Kind == TokenKind.ElseIf)
+        {
+            var elseIfStatement = ParseIfStatement();
+            if (elseIfStatement == null)
+            {
+                return null;
+            }
+            elseBlock = [elseIfStatement];
+        }
+        else if (Peek().Kind == TokenKind.Else)
         {
             NextToken();
             elseBlock = ParseBlock();
         }
 
-        if (!ExpectToken(TokenKind.End, out _))
+        if (!elseIf && !ExpectToken(TokenKind.End, out _))
         {
             return null;
         }
