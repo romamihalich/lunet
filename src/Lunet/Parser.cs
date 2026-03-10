@@ -4,7 +4,9 @@ public record Ast(IReadOnlyList<ITopLevelStatement> Statements);
 
 public interface ITopLevelStatement;
 public record ImportStatement(NamespacePath Path, Location Location) : ITopLevelStatement;
-public record FunctionStatement(string Name, IReadOnlyList<IStatement> Body) : ITopLevelStatement;
+public record FunctionStatement(string Name, List<FunctionParameter> Parameters, IReadOnlyList<IStatement> Body, string ReturnType, Location ReturnTypeLocation) : ITopLevelStatement;
+
+public record struct FunctionParameter(string Name, string Type, Location TypeLocation);
 
 public interface IStatement;
 public record ExpressionStatement(FunctionCallExpression Expression) : IStatement;
@@ -12,6 +14,7 @@ public record VariableDefinitionStatement(string Name, string Type, IExpression 
 public record AssignmentStatement(QualifiedIdentExpression Name, IExpression Rvalue) : IStatement;
 public record IfStatement(IExpression Condition, IReadOnlyList<IStatement> Block, IReadOnlyList<IStatement>? ElseBlock) : IStatement;
 public record WhileStatement(IExpression Condition, IReadOnlyList<IStatement> Block) : IStatement;
+public record ReturnStatement(IExpression Expression) : IStatement;
 
 public interface IExpression
 {
@@ -148,7 +151,7 @@ public static class BinopFacts
 
 public record BinopExpression(BinopKind Kind, IExpression Left, IExpression Right, Location Location) : IExpression;
 
-public record FunctionCallExpression(QualifiedIdentExpression Name, IReadOnlyList<IExpression> Args, Location Location) : IExpression;
+public record FunctionCallExpression(IExpression Expression, IReadOnlyList<IExpression> Args, Location Location) : IExpression;
 
 public record QualifiedIdentExpression(NamespacePath Path, string? Ident, Location Location) : IExpression;
 
@@ -209,8 +212,30 @@ public class Parser
 
         var name = (string)nameToken.Value!;
 
-        if (!ExpectToken(TokenKind.OParen, out _)) return null;
-        if (!ExpectToken(TokenKind.CParen, out _)) return null;
+        var parameters = ParseFunctionParameters();
+
+        if (parameters == null)
+        {
+            return null;
+        }
+
+        string returnType;
+        Location returnTypeLocation;
+        if (Peek().Kind == TokenKind.Arrow)
+        {
+            NextToken();
+            if (!ExpectToken(TokenKind.Ident, out var returnTypeToken))
+            {
+                return null;
+            }
+            returnType = (string)returnTypeToken.Value!;
+            returnTypeLocation = returnTypeToken.Location;
+        }
+        else
+        {
+            returnType = "void";
+            returnTypeLocation = default;
+        }
 
         var body = ParseBlock();
 
@@ -219,7 +244,52 @@ public class Parser
             return null;
         }
 
-        return new FunctionStatement(name, body);
+        return new FunctionStatement(name, parameters, body, returnType, returnTypeLocation);
+    }
+
+    private List<FunctionParameter>? ParseFunctionParameters()
+    {
+        if (!ExpectToken(TokenKind.OParen, out _))
+        {
+            return null;
+        }
+
+        var parameters = new List<FunctionParameter>();
+        while (Peek().Kind != TokenKind.CParen)
+        {
+            if (!ExpectToken(TokenKind.Ident, out var nameToken))
+            {
+                return null;
+            }
+            if (!ExpectToken(TokenKind.Colon))
+            {
+                return null;
+            }
+            if (!ExpectToken(TokenKind.Ident, out var typeToken))
+            {
+                return null;
+            }
+
+            var name = (string)nameToken.Value!;
+            var type = (string)typeToken.Value!;
+
+            parameters.Add(new(name, type, typeToken.Location));
+
+            if (Peek().Kind != TokenKind.Comma)
+            {
+                break;
+            }
+
+            // skip ','
+            NextToken();
+        }
+
+        if (!ExpectToken(TokenKind.CParen, out _))
+        {
+            return null;
+        }
+
+        return parameters;
     }
 
     private ImportStatement? ParseImportStatement()
@@ -288,6 +358,10 @@ public class Parser
             case TokenKind.While:
             {
                 return ParseWhileStatement();
+            }
+            case TokenKind.Return:
+            {
+                return ParseReturnStatement();
             }
             default:
                 return null;
@@ -414,6 +488,23 @@ public class Parser
         return new WhileStatement(cond, block);
     }
 
+    private ReturnStatement? ParseReturnStatement()
+    {
+        if (!ExpectToken(TokenKind.Return))
+        {
+            return null;
+        }
+
+        var expr = ParseExpression();
+
+        if (expr == null)
+        {
+            return null;
+        }
+
+        return new ReturnStatement(expr);
+    }
+
     private IReadOnlyList<IStatement> ParseBlock()
     {
         var block = new List<IStatement>();
@@ -428,20 +519,40 @@ public class Parser
 
     private (IReadOnlyList<IExpression>?, Location) ParseArgs()
     {
-        if (!ExpectToken(TokenKind.OParen, out var oparenToken)) return (null, default);
-
-        var expr = ParseExpression();
-
-        if (expr == null)
+        if (!ExpectToken(TokenKind.OParen, out var oparenToken))
         {
             return (null, default);
         }
 
-        // TODO: support for multiple args
+        var args = new List<IExpression>();
+        while (Peek().Kind != TokenKind.CParen)
+        {
+            var expr = ParseExpression();
 
-        if (!ExpectToken(TokenKind.CParen, out var cparenToken)) return (null, default);
+            if (expr == null)
+            {
+                return (null, default);
+            }
 
-        return ([expr], Location.Combine(oparenToken.Location, cparenToken.Location));
+            args.Add(expr);
+
+            if (Peek().Kind != TokenKind.Comma)
+            {
+                break;
+            }
+
+            // skip ','
+            NextToken();
+        }
+
+        if (!ExpectToken(TokenKind.CParen, out var cparenToken))
+        {
+            return (null, default);
+        }
+
+        var location = Location.Combine(oparenToken.Location, cparenToken.Location);
+
+        return (args, location);
     }
 
     private QualifiedIdentExpression? ParseQualifiedIdentExpression()
@@ -540,7 +651,27 @@ public class Parser
             var location = Location.Combine(notToken.Location, expr.Location);
             return new UnaryExpression(UnaryKind.Not, expr, location);
         }
-        return ParsePrimaryExpression();
+        return ParseSuffixExpression();
+    }
+
+    private IExpression? ParseSuffixExpression()
+    {
+        var expr = ParsePrimaryExpression();
+        if (expr == null)
+        {
+            return null;
+        }
+        if (Peek().Kind == TokenKind.OParen)
+        {
+            var (args, argsLocation) = ParseArgs();
+            if (args == null)
+            {
+                return null;
+            }
+            var location = Location.Combine(expr.Location, argsLocation);
+            return new FunctionCallExpression(expr, args, location);
+        }
+        return expr;
     }
 
     private IExpression? ParsePrimaryExpression()

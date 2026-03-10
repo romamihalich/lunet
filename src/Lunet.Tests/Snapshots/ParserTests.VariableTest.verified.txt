@@ -20,6 +20,7 @@
     {
       $type: FunctionStatement,
       Name: main,
+      Parameters: null,
       Body: [
         {
           $type: VariableDefinitionStatement,
@@ -48,7 +49,7 @@
           $type: ExpressionStatement,
           Expression: {
             $type: FunctionCallExpression,
-            Name: {
+            Expression: {
               $type: QualifiedIdentExpression,
               Path: {
                 $type: NamespacePath,
@@ -88,7 +89,15 @@
             }
           }
         }
-      ]
+      ],
+      ReturnType: void,
+      ReturnTypeLocation: {
+        $type: Location,
+        StartRow: 0,
+        StartCol: 0,
+        EndRow: 0,
+        EndCol: 0
+      }
     }
   ]
 }

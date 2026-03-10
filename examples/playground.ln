@@ -46,4 +46,11 @@ function main()
 
     System::Console.Write("5 % 2 = ")
     System::Console.WriteLine(5 % 2)
+
+    System::Console.Write("sum(34 + 35) == ")
+    System::Console.WriteLine(sum(34, 35))
+end
+
+function sum(a: int, b: int) -> int
+    return a + b
 end

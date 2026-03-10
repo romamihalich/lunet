@@ -1,0 +1,81 @@
+﻿{
+  $type: Ast,
+  Statements: [
+    {
+      $type: FunctionStatement,
+      Name: sum,
+      Parameters: [
+        {
+          $type: FunctionParameter,
+          Name: a,
+          Type: int,
+          TypeLocation: {
+            $type: Location,
+            StartRow: 1,
+            StartCol: 17,
+            EndRow: 1,
+            EndCol: 19
+          }
+        },
+        {
+          $type: FunctionParameter,
+          Name: b,
+          Type: int,
+          TypeLocation: {
+            $type: Location,
+            StartRow: 1,
+            StartCol: 25,
+            EndRow: 1,
+            EndCol: 27
+          }
+        }
+      ],
+      Body: [
+        {
+          $type: ReturnStatement,
+          Expression: {
+            $type: BinopExpression,
+            Kind: Add,
+            Left: {
+              $type: IdentExpression,
+              Name: a,
+              Location: {
+                $type: Location,
+                StartRow: 2,
+                StartCol: 12,
+                EndRow: 2,
+                EndCol: 12
+              }
+            },
+            Right: {
+              $type: IdentExpression,
+              Name: b,
+              Location: {
+                $type: Location,
+                StartRow: 2,
+                StartCol: 16,
+                EndRow: 2,
+                EndCol: 16
+              }
+            },
+            Location: {
+              $type: Location,
+              StartRow: 2,
+              StartCol: 12,
+              EndRow: 2,
+              EndCol: 16
+            }
+          }
+        }
+      ],
+      ReturnType: int,
+      ReturnTypeLocation: {
+        $type: Location,
+        StartRow: 1,
+        StartCol: 33,
+        EndRow: 1,
+        EndCol: 35
+      }
+    }
+  ]
+}

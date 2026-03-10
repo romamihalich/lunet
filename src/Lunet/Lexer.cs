@@ -29,12 +29,15 @@ public enum TokenKind
     ElseIf,
     While,
     Do,
+    Return,
 
     // symbols
     OParen,
     CParen,
     Colon,
     DoubleColon,
+    Arrow,
+    Comma,
     Dot,
     DoubleDot,
     Equals,
@@ -97,6 +100,8 @@ public class Lexer
             ')'                     => Eat(TokenKind.CParen, 0),
             ':' when Peek() == ':'  => Eat(TokenKind.DoubleColon, 1),
             ':'                     => Eat(TokenKind.Colon, 0),
+            '-' when Peek() == '>'  => Eat(TokenKind.Arrow, 1),
+            ','                     => Eat(TokenKind.Comma, 0),
             '.' when Peek() == '.'  => Eat(TokenKind.DoubleDot, 1),
             '.'                     => Eat(TokenKind.Dot, 0),
             '~' when Peek() == '='  => Eat(TokenKind.NotEquals, 1),
@@ -224,6 +229,7 @@ public class Lexer
             "elseif"   => kind = TokenKind.ElseIf,
             "while"    => kind = TokenKind.While,
             "do"       => kind = TokenKind.Do,
+            "return"   => kind = TokenKind.Return,
             _          => kind = default,
         };
 

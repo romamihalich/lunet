@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
@@ -55,20 +57,45 @@ public class CodeGen
 
         new Compilation(assembly, referenceAssemblies, diagnostics).Compile(ast);
 
-        assembly.Write(outFilePath);
-        File.WriteAllText(
-            path: Path.ChangeExtension(outFilePath, ".runtimeconfig.json"),
-            contents: RuntimeConfig
-        );
+        if (!diagnostics.HasError)
+        {
+            assembly.Write(outFilePath);
+            File.WriteAllText(
+                path: Path.ChangeExtension(outFilePath, ".runtimeconfig.json"),
+                contents: RuntimeConfig
+            );
+        }
     }
 }
 
-internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] referenceAssemblies, Diagnostics diagnostics)
+internal class Compilation
 {
+    private readonly TypeReference _unknownType;
+
+    private readonly AssemblyDefinition _assembly;
+    private readonly AssemblyDefinition[] _referenceAssemblies;
+    private readonly Diagnostics _diagnostics;
+
+    private readonly TypeDefinition _programClass;
+
     private readonly List<string> _importedNamespaces = [];
+    private readonly Dictionary<string, MethodDefinition> _localFunctions = [];
+
+    public Compilation(AssemblyDefinition assembly, AssemblyDefinition[] referenceAssemblies, Diagnostics diagnostics)
+    {
+        _assembly = assembly;
+        _referenceAssemblies = referenceAssemblies;
+        _diagnostics = diagnostics;
+
+        _programClass = new TypeDefinition("", "Program", TypeAttributes.Class, assembly.MainModule.TypeSystem.Object);
+        assembly.MainModule.Types.Add(_programClass);
+
+        _unknownType = new TypeReference("", "UnkownType", _assembly.MainModule, _assembly.MainModule.TypeSystem.CoreLibrary);
+    }
 
     public void Compile(Ast ast)
     {
+        CollectAllFunctions(ast);
         foreach (var statement in ast.Statements)
         {
             CompileTopLevelStatement(statement);
@@ -90,7 +117,7 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 break;
             }
             default:
-                throw new Exception();
+                throw new ArgumentOutOfRangeException(nameof(statement));
         }
     }
 
@@ -98,56 +125,73 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
     {
         var namespaceName = string.Join(".", import.Path.Path);
 
-        var found = referenceAssemblies
+        var found = _referenceAssemblies
             .SelectMany(a => a.Modules)
             .Any(m => m.Types.Any(t => t.Namespace == namespaceName));
         if (!found)
         {
-            diagnostics.AddError($"Namespace '{namespaceName}' is not found in reference assemblies", import.Location);
+            _diagnostics.AddError($"Namespace '{namespaceName}' is not found in reference assemblies", import.Location);
         }
         _importedNamespaces.Add(namespaceName);
     }
 
-    private void CompileFunctionStatement(FunctionStatement function)
+    private void CollectAllFunctions(Ast ast)
     {
-        if (function.Name == "main")
+        foreach (var function in ast.Statements.OfType<FunctionStatement>())
         {
-            // var moduleDefinition = ModuleDefinition.CreateModule("module", ModuleKind.Console);
-            var programClass = new TypeDefinition("", "Program", TypeAttributes.Class, assembly.MainModule.TypeSystem.Object);
-            // moduleDefinition.Types.Add(typeDefinition);
-            assembly.MainModule.Types.Add(programClass);
+            var returnType = LookupType(function.ReturnType);
+            if (returnType == null)
+            {
+                _diagnostics.AddError($"Unkown type '{function.ReturnType}'", function.ReturnTypeLocation);
+            }
+            returnType ??= _unknownType;
+            var method = new MethodDefinition(function.Name, MethodAttributes.Private | MethodAttributes.Static, returnType);
+            _programClass.Methods.Add(method);
 
-            // var mscorlib = AssemblyDefinition.ReadAssembly("/usr/share/dotnet/sdk/9.0.110/ref/mscorlib.dll");
-            // var voidType = mscorlib.MainModule.ExportedTypes.First(x => x.FullName == "System.Void");
-            // var voidDef = voidType.Resolve();
-            // // var voidRef = new TypeReference(voidType.Namespace, voidType.Name, mscorlib.MainModule, voidType.Scope);
-            // assemblyDefinition.MainModule.ImportReference(voidDef);
+            foreach (var parameter in function.Parameters)
+            {
+                var type = LookupType(parameter.Type);
 
-            // var consoleClass = assembly.MainModule.GetType("System.Console");
-            var mainMethod = new MethodDefinition("Main", MethodAttributes.Private | MethodAttributes.Static, assembly.MainModule.TypeSystem.Void);
-            programClass.Methods.Add(mainMethod);
-            assembly.MainModule.EntryPoint = mainMethod;
+                if (type == null)
+                {
+                    _diagnostics.AddError($"Unkown type '{parameter.Type}'", parameter.TypeLocation);
+                }
 
-            CompileFunction(function, mainMethod);
-        }
-        else
-        {
-            throw new NotImplementedException("only main function is supporteds now");
+                type ??= _unknownType;
+                method.Parameters.Add(new ParameterDefinition(type));
+            }
+
+            if (function.Name == "main")
+            {
+                _assembly.MainModule.EntryPoint = method;
+            }
+
+            _localFunctions.Add(function.Name, method);
         }
     }
 
-    private void CompileFunction(FunctionStatement function, MethodDefinition mainMethod)
+    private void CompileFunctionStatement(FunctionStatement function)
     {
-        var ilProcessor = mainMethod.Body.GetILProcessor();
+        var method = _localFunctions[function.Name];
 
         var scope = new FunctionScope();
 
-        CompileBlock(ilProcessor, scope, mainMethod, function.Body);
+        foreach (var parameter in function.Parameters)
+        {
+            var name = parameter.Name;
+            var type = LookupType(parameter.Type);
+
+            scope.SetArg(name, type);
+        }
+
+        var ilProcessor = method.Body.GetILProcessor();
+
+        CompileBlock(ilProcessor, scope, method, function.Body);
 
         ilProcessor.Emit(OpCodes.Ret);
     }
 
-    private void CompileBlock(ILProcessor ilProcessor, FunctionScope scope, MethodDefinition mainMethod, IReadOnlyList<IStatement> block)
+    private void CompileBlock(ILProcessor ilProcessor, FunctionScope scope, MethodDefinition method, IReadOnlyList<IStatement> block)
     {
         using var _ = scope.EnterScope();
         foreach (var statement in block)
@@ -158,7 +202,8 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     {
                         var exprType = CompileExpression(ilProcessor, scope, expressionStatement.Expression);
 
-                        if (exprType != assembly.MainModule.TypeSystem.Void)
+                        if (exprType != null
+                            && !exprType.IsSameType(_assembly.MainModule.TypeSystem.Void))
                         {
                             ilProcessor.Emit(OpCodes.Pop);
                         }
@@ -166,23 +211,17 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     }
                 case VariableDefinitionStatement variableDefinitionStatement:
                     {
-                        var realType = variableDefinitionStatement.Type switch
-                        {
-                            "string" => assembly.MainModule.TypeSystem.String,
-                            "int" => assembly.MainModule.TypeSystem.Int32,
-                            "bool" => assembly.MainModule.TypeSystem.Boolean,
-                            _ => null,
-                        };
+                        var realType = LookupType(variableDefinitionStatement.Type);
                         if (realType == null)
                         {
-                            diagnostics.AddError($"Unkown type '{variableDefinitionStatement.Type}'", variableDefinitionStatement.TypeLocation);
+                            _diagnostics.AddError($"Unkown type '{variableDefinitionStatement.Type}'", variableDefinitionStatement.TypeLocation);
                         }
                         var exprType = CompileExpression(ilProcessor, scope, variableDefinitionStatement.Rvalue);
-                        if (realType != null && exprType != null && realType != exprType)
+                        if (realType != null && exprType != null && !realType.IsSameType(exprType))
                         {
-                            diagnostics.AddError($"Cannot convert type '{exprType.FullName}' to '{realType.FullName}'", variableDefinitionStatement.TypeLocation);
+                            _diagnostics.AddError($"Cannot convert type '{exprType.FullName}' to '{realType.FullName}'", variableDefinitionStatement.TypeLocation);
                         }
-                        mainMethod.Body.Variables.Add(new VariableDefinition(exprType));
+                        method.Body.Variables.Add(new VariableDefinition(exprType));
 
                         var local = scope.SetLocal(variableDefinitionStatement.Name, realType);
                         ilProcessor.Emit(OpCodes.Stloc, local.Id);
@@ -191,19 +230,19 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 case IfStatement ifStatement:
                     {
                         var condType = CompileExpression(ilProcessor, scope, ifStatement.Condition);
-                        if (condType != assembly.MainModule.TypeSystem.Boolean)
+                        if (condType != null && !condType.IsSameType(_assembly.MainModule.TypeSystem.Boolean))
                         {
-                            diagnostics.AddError("Condition must be of type bool", ifStatement.Condition.Location);
+                            _diagnostics.AddError("Condition must be of type bool", ifStatement.Condition.Location);
                         }
                         var elseLabel = ilProcessor.Create(OpCodes.Nop);
                         var afterLabel = ilProcessor.Create(OpCodes.Nop);
                         ilProcessor.Emit(OpCodes.Brfalse, elseLabel);
-                        CompileBlock(ilProcessor, scope, mainMethod, ifStatement.Block);
+                        CompileBlock(ilProcessor, scope, method, ifStatement.Block);
                         ilProcessor.Emit(OpCodes.Br, afterLabel);
                         ilProcessor.Append(elseLabel);
                         if (ifStatement.ElseBlock != null)
                         {
-                            CompileBlock(ilProcessor, scope, mainMethod, ifStatement.ElseBlock);
+                            CompileBlock(ilProcessor, scope, method, ifStatement.ElseBlock);
                         }
                         ilProcessor.Append(afterLabel);
                         break;
@@ -215,34 +254,49 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
 
                         ilProcessor.Append(loopStart);
                         var condType = CompileExpression(ilProcessor, scope, whileStatement.Condition);
-                        if (condType != assembly.MainModule.TypeSystem.Boolean)
+                        if (condType != null && !condType.IsSameType(_assembly.MainModule.TypeSystem.Boolean))
                         {
-                            diagnostics.AddError("Condition must be of type bool", whileStatement.Condition.Location);
+                            _diagnostics.AddError("Condition must be of type bool", whileStatement.Condition.Location);
                         }
                         ilProcessor.Emit(OpCodes.Brfalse, loopEnd);
-                        CompileBlock(ilProcessor, scope, mainMethod, whileStatement.Block);
+                        CompileBlock(ilProcessor, scope, method, whileStatement.Block);
                         ilProcessor.Emit(OpCodes.Br, loopStart);
                         ilProcessor.Append(loopEnd);
                         break;
                     }
                 case AssignmentStatement(var name, var rvalue):
                     {
+                        var hasArg = scope.TryGetArg(name.Ident, out var arg);
                         var hasLocal = scope.TryGetLocal(name.Ident, out var local);
                         if (!hasLocal)
                         {
-                            diagnostics.AddError($"Variable '{name}' is not found", name.Location);
+                            _diagnostics.AddError($"Variable '{name}' is not found", name.Location);
                         }
                         var rvalueType = CompileExpression(ilProcessor, scope, rvalue);
                         if (rvalueType != null
                             && local.Type != null
-                            && rvalueType != local.Type)
+                            && !rvalueType.IsSameType(local.Type))
                         {
-                            diagnostics.AddError($"Cannot convert type '{rvalueType.FullName}' to '{local.Type.FullName}'", rvalue.Location);
+                            _diagnostics.AddError($"Cannot convert type '{rvalueType.FullName}' to '{local.Type.FullName}'", rvalue.Location);
                         }
                         if (hasLocal)
                         {
                             ilProcessor.Emit(OpCodes.Stloc, local.Id);
                         }
+                        if (hasArg)
+                        {
+                            ilProcessor.Emit(OpCodes.Starg, arg.Id);
+                        }
+                        break;
+                    }
+                case ReturnStatement returnStatement:
+                    {
+                        var returnType = CompileExpression(ilProcessor, scope, returnStatement.Expression);
+                        if (returnType != null && !method.ReturnType.IsSameType(_unknownType) && !returnType.IsSameType(method.ReturnType))
+                        {
+                            _diagnostics.AddError($"Type of expression '{returnType.FullName}' does not match return type '{method.ReturnType.FullName}'", returnStatement.Expression.Location);
+                        }
+                        ilProcessor.Emit(OpCodes.Ret);
                         break;
                     }
                 default:
@@ -261,31 +315,36 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             }
             case IdentExpression(var name, var location):
             {
-                if (scope.TryGetLocal(name, out var local))
+                if (scope.TryGetArg(name, out var arg))
+                {
+                    ilProcessor.Emit(OpCodes.Ldarg, arg.Id);
+                    return arg.Type;
+                }
+                else if (scope.TryGetLocal(name, out var local))
                 {
                     ilProcessor.Emit(OpCodes.Ldloc, local.Id);
                     return local.Type;
                 }
                 else
                 {
-                    diagnostics.AddError($"Variable '{name}' is not found", location);
+                    _diagnostics.AddError($"Variable '{name}' is not found", location);
                     return null;
                 }
             }
             case StringExpression(string value, _):
             {
                 ilProcessor.Emit(OpCodes.Ldstr, value);
-                return assembly.MainModule.TypeSystem.String;
+                return _assembly.MainModule.TypeSystem.String;
             }
             case IntExpression(int value, _):
             {
                 ilProcessor.Emit(OpCodes.Ldc_I4, value);
-                return assembly.MainModule.TypeSystem.Int32;
+                return _assembly.MainModule.TypeSystem.Int32;
             }
             case BoolExpression(bool value, _):
             {
                 ilProcessor.Emit(OpCodes.Ldc_I4, value ? 1 : 0);
-                return assembly.MainModule.TypeSystem.Boolean;
+                return _assembly.MainModule.TypeSystem.Boolean;
             }
             case UnaryExpression(var kind, var expr, var location):
             {
@@ -297,14 +356,14 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                 switch (kind)
                 {
                     case UnaryKind.Not:
-                        if (type == assembly.MainModule.TypeSystem.Boolean)
+                        if (type.IsSameType(_assembly.MainModule.TypeSystem.Boolean))
                         {
                             ilProcessor.Emit(OpCodes.Ceq);
-                            return assembly.MainModule.TypeSystem.Boolean;
+                            return _assembly.MainModule.TypeSystem.Boolean;
                         }
                         else
                         {
-                            diagnostics.AddError($"Operator 'not' cannot be applied to operand of type '{type.FullName}'", location);
+                            _diagnostics.AddError($"Operator 'not' cannot be applied to operand of type '{type.FullName}'", location);
                             return null;
                         }
                     default:
@@ -317,18 +376,57 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
             }
             case FunctionCallExpression funcCall:
             {
-                var namespaceOrClassPath = funcCall.Name.Path.Path;
+                if (funcCall.Expression is IdentExpression identExpression)
+                {
+                    var localMethod = _localFunctions[identExpression.Name];
+                    if (localMethod.Parameters.Count != funcCall.Args.Count)
+                    {
+                        _diagnostics.AddError($"Expected {localMethod.Parameters.Count}, but was provided {funcCall.Args.Count}", funcCall.Location);
+                        return null;
+                    }
+                    var actualParameterTypes = new List<TypeReference>();
+                    foreach (var arg in funcCall.Args)
+                    {
+                        var parameterType = CompileExpression(ilProcessor, scope, arg);
+                        if (parameterType == null)
+                        {
+                            return null;
+                        }
+                        actualParameterTypes.Add(parameterType);
+                    }
+                    for (int i = 0; i < actualParameterTypes.Count; i++)
+                    {
+                        var expectedType = localMethod.Parameters[i].ParameterType;
+                        if (!expectedType.IsSameType(_unknownType)
+                            && !expectedType.IsSameType(actualParameterTypes[i]))
+                        {
+                            _diagnostics.AddError($"Cannot convert type '{actualParameterTypes[i].FullName}' to '{expectedType.FullName}'", funcCall.Args[i].Location);
+                        }
+                    }
+                    ilProcessor.Emit(OpCodes.Call, localMethod);
+                    return !localMethod.ReturnType.IsSameType(_unknownType)
+                        ? localMethod.ReturnType
+                        : null;
+
+                }
+
+                if (funcCall.Expression is not QualifiedIdentExpression name)
+                {
+                    throw new NotImplementedException(funcCall.Expression.GetType().ToString());
+                }
+
+                var namespaceOrClassPath = name.Path.Path;
                 if (!namespaceOrClassPath.Any())
                 {
                     throw new NotImplementedException("local function not supported yet");
                 }
-                if (funcCall.Name.Ident is null)
+                if (name.Ident is null)
                 {
                     throw new NotImplementedException();
                 }
                 // ["System", "Console"] ident: "WriteLine"
 
-                var prefix = funcCall.Name.Path.Path[0];
+                var prefix = name.Path.Path[0];
                 if (!_importedNamespaces.Any(x => x.Split('.').Last() == prefix))
                 {
                     throw new NotImplementedException();
@@ -346,20 +444,19 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     parameterTypes.Add(parameterType);
                 }
 
-                var className = string.Join(".", funcCall.Name.Path.Path);
-                var methodName = funcCall.Name.Ident;
+                var className = string.Join(".", name.Path.Path);
+                var methodName = name.Ident;
                 var method = FindStaticMethod(className, methodName, parameterTypes);
                 if (method == null)
                 {
-                    diagnostics.AddError($"Could not find method '{className}.{methodName}'", funcCall.Name.Location);
+                    _diagnostics.AddError($"Could not find method '{className}.{methodName}'", name.Location);
                     return null;
                 }
-                var methodRef = assembly.MainModule.ImportReference(method);
+                var methodRef = _assembly.MainModule.ImportReference(method);
 
                 ilProcessor.Emit(OpCodes.Call, methodRef);
 
-                // TODO: this is temporary
-                return assembly.MainModule.TypeSystem.Void;
+                return methodRef.ReturnType;
             }
             default:
                 throw new ArgumentOutOfRangeException(nameof(expression));
@@ -380,15 +477,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Mul);
-                    return assembly.MainModule.TypeSystem.Int32;
+                    return _assembly.MainModule.TypeSystem.Int32;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -402,15 +499,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Div);
-                    return assembly.MainModule.TypeSystem.Int32;
+                    return _assembly.MainModule.TypeSystem.Int32;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -424,15 +521,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Rem);
-                    return assembly.MainModule.TypeSystem.Int32;
+                    return _assembly.MainModule.TypeSystem.Int32;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -446,15 +543,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Add);
-                    return assembly.MainModule.TypeSystem.Int32;
+                    return _assembly.MainModule.TypeSystem.Int32;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -468,15 +565,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Sub);
-                    return assembly.MainModule.TypeSystem.Int32;
+                    return _assembly.MainModule.TypeSystem.Int32;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -490,14 +587,14 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.String
-                    && rightType == assembly.MainModule.TypeSystem.String)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.String)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.String))
                 {
                     throw new NotImplementedException("string concatenation");
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -512,15 +609,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Ceq);
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -534,17 +631,17 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Ceq);
                     ilProcessor.Emit(OpCodes.Ldc_I4_0);
                     ilProcessor.Emit(OpCodes.Ceq);
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -569,14 +666,14 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Boolean
-                    && rightType == assembly.MainModule.TypeSystem.Boolean)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Boolean)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Boolean))
                 {
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -601,14 +698,14 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Boolean
-                    && rightType == assembly.MainModule.TypeSystem.Boolean)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Boolean)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Boolean))
                 {
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -623,15 +720,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Cgt);
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -645,17 +742,17 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Clt);
                     ilProcessor.Emit(OpCodes.Ldc_I4_0);
                     ilProcessor.Emit(OpCodes.Ceq);
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -669,15 +766,15 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Clt);
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -691,17 +788,17 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
                     return null;
                 }
 
-                if (leftType == assembly.MainModule.TypeSystem.Int32
-                    && rightType == assembly.MainModule.TypeSystem.Int32)
+                if (leftType.IsSameType(_assembly.MainModule.TypeSystem.Int32)
+                    && rightType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
                 {
                     ilProcessor.Emit(OpCodes.Cgt);
                     ilProcessor.Emit(OpCodes.Ldc_I4_0);
                     ilProcessor.Emit(OpCodes.Ceq);
-                    return assembly.MainModule.TypeSystem.Boolean;
+                    return _assembly.MainModule.TypeSystem.Boolean;
                 }
                 else
                 {
-                    diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
+                    _diagnostics.AddError($"Operator '{binop.Kind.GetText()}' cannot be applied to operands of type {leftType.FullName} and {rightType.FullName}", binop.Location);
                     return null;
                 }
             }
@@ -711,16 +808,28 @@ internal class Compilation(AssemblyDefinition assembly, AssemblyDefinition[] ref
         }
     }
 
+    private TypeReference? LookupType(string type)
+    {
+        return type switch
+        {
+            "string" => _assembly.MainModule.TypeSystem.String,
+            "int" => _assembly.MainModule.TypeSystem.Int32,
+            "bool" => _assembly.MainModule.TypeSystem.Boolean,
+            "void" => _assembly.MainModule.TypeSystem.Void,
+            _ => null,
+        };
+    }
+
     private MethodDefinition? FindStaticMethod(string className, string methodName, IEnumerable<TypeReference> parameterTypes)
     {
-        var types = referenceAssemblies
+        var types = _referenceAssemblies
             .SelectMany(a => a.Modules)
             .SelectMany(m => m.Types)
             .Where(t => t.FullName == className);
         var methods = types.SelectMany(t => t.Methods)
             .Where(m => m.IsPublic && m.IsStatic)
             .Where(m => m.Name == methodName)
-            .Where(m => m.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(parameterTypes.Select(p => p.FullName)))
+            .Where(m => m.Parameters.Select(p => p.ParameterType).SequenceEqual(parameterTypes, TypeReferenceEqualityComparer.Instance))
             .ToArray();
         if (methods.Length != 1)
         {
@@ -734,13 +843,10 @@ internal record struct LocalVariable(int Id, TypeReference? Type);
 
 internal class FunctionScope
 {
-    private readonly List<Dictionary<string, LocalVariable>> _locals;
+    private readonly Dictionary<string, LocalVariable> _args = [];
+    private readonly List<Dictionary<string, LocalVariable>> _locals = [];
     private int _localId;
-
-    public FunctionScope()
-    {
-        _locals = [];
-    }
+    private int _argId;
 
     public IDisposable EnterScope()
     {
@@ -751,6 +857,16 @@ internal class FunctionScope
     public void LeaveScope()
     {
         _locals.RemoveAt(_locals.Count - 1);
+    }
+
+    public bool TryGetArg(string name, out LocalVariable arg)
+    {
+        return _args.TryGetValue(name, out arg);
+    }
+
+    public LocalVariable SetArg(string name, TypeReference? type)
+    {
+        return _args[name] = new(_argId++, type);
     }
 
     public bool TryGetLocal(string name, out LocalVariable local)
@@ -778,5 +894,49 @@ internal class FunctionScope
             scope?.LeaveScope();
             scope = null;
         }
+    }
+}
+
+public static class TypeReferenceExtensions
+{
+    public static bool IsSameType(this TypeReference self, TypeReference other)
+    {
+        ArgumentNullException.ThrowIfNull(self);
+        ArgumentNullException.ThrowIfNull(other);
+
+        if (self == other)
+        {
+            return true;
+        }
+
+        if (self.FullName != other.FullName)
+        {
+            return false;
+        }
+
+        var selfTypeDefinition = self.Resolve();
+        var otherTypeDefinition = other.Resolve();
+
+        return selfTypeDefinition.Scope.Name == otherTypeDefinition.Scope.Name;
+    }
+}
+
+public class TypeReferenceEqualityComparer : IEqualityComparer<TypeReference>
+{
+    public static TypeReferenceEqualityComparer Instance { get; } = new();
+
+    public bool Equals(TypeReference? x, TypeReference? y)
+    {
+        if (x == null || y == null)
+        {
+            return x == y;
+        }
+        return x.IsSameType(y);
+    }
+
+    public int GetHashCode([DisallowNull] TypeReference obj)
+    {
+        // TODO: this is kind of bad
+        return obj.GetHashCode();
     }
 }

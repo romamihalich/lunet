@@ -77,4 +77,23 @@ public class ParserTests
         return Verify(expr, _verifySettings)
             .UseFileName($"{nameof(ParserTests)}.{nameof(Expressions)}_{n}");
     }
+
+    [Test]
+    public Task Functions()
+    {
+        var text = """
+        function sum(a: int, b: int) -> int
+            return a + b
+        end
+        """;
+
+        var diagnostics = new Diagnostics();
+        var lexer = new Lexer(text, diagnostics);
+        var parser = new Parser(lexer, diagnostics);
+        var ast = parser.Parse();
+
+        Assert.That(!diagnostics.Any(), "Diagnostics should be empty");
+
+        return Verify(ast, _verifySettings);
+    }
 }
