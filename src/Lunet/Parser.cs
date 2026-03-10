@@ -159,16 +159,22 @@ public record NamespacePath(IReadOnlyList<string> Path);
 
 public class Parser
 {
+    private const int LookheadSize = 3;
+
     private readonly Lexer _lexer;
     private readonly Diagnostics _diagnostics;
 
-    private Token _lookahead;
+    private readonly Token[] _lookahead;
 
     public Parser(Lexer lexer, Diagnostics diagnostics)
     {
         _lexer = lexer;
         _diagnostics = diagnostics;
-        _lookahead = lexer.Lex();
+        _lookahead = new Token[LookheadSize];
+        for (int i = 0; i < LookheadSize; i++)
+        {
+            _lookahead[i] = lexer.Lex();
+        }
     }
 
     public Ast Parse()
@@ -676,6 +682,12 @@ public class Parser
 
     private IExpression? ParsePrimaryExpression()
     {
+        if (Peek().Kind == TokenKind.Ident
+            && (Peek(1).Kind == TokenKind.DoubleColon
+                || Peek(1).Kind == TokenKind.Dot))
+        {
+            return ParseQualifiedIdentExpression();
+        }
         var t = NextToken();
         switch (t.Kind)
         {
@@ -720,7 +732,7 @@ public class Parser
         t = NextToken();
         if (t.Kind != kind)
         {
-            _diagnostics.AddError($"Unexpected token '{t.Kind}'", t.Location);
+            _diagnostics.AddError($"Unexpected token '{t.Kind}', expected {kind}", t.Location);
             return false;
         }
 
@@ -732,15 +744,23 @@ public class Parser
         return ExpectToken(kind, out var _);
     }
 
-    private Token Peek()
+    private Token Peek(int offset = 0)
     {
-        return _lookahead;
+        if (offset < 0 || offset >= LookheadSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset), offset, "Offset was outside the statically defined limit");
+        }
+        return _lookahead[offset];
     }
 
     private Token NextToken()
     {
-        var t = _lookahead;
-        _lookahead = _lexer.Lex();
+        var t = _lookahead[0];
+        for (int i = 0; i < LookheadSize - 1; i++)
+        {
+            _lookahead[i] = _lookahead[i + 1];
+        }
+        _lookahead[LookheadSize - 1] = _lexer.Lex();
         return t;
     }
 }

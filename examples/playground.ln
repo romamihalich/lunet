@@ -49,6 +49,12 @@ function main()
 
     System::Console.Write("sum(34 + 35) == ")
     System::Console.WriteLine(sum(34, 35))
+
+    System::Console.Write("Enter your name: ")
+    local line: string = System::Console.ReadLine()
+
+    System::Console.Write("Hello, ")
+    System::Console.WriteLine(line)
 end
 
 function sum(a: int, b: int) -> int
