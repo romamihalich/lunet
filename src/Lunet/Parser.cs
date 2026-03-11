@@ -175,6 +175,7 @@ public class Parser
     private readonly Diagnostics _diagnostics;
 
     private readonly Token[] _lookahead;
+    private int _lookheadIndex;
 
     public Parser(Lexer lexer, Diagnostics diagnostics)
     {
@@ -755,17 +756,14 @@ public class Parser
         {
             throw new ArgumentOutOfRangeException(nameof(offset), offset, "Offset was outside the statically defined limit");
         }
-        return _lookahead[offset];
+        return _lookahead[(_lookheadIndex + offset) % LookheadSize];
     }
 
     private Token NextToken()
     {
-        var t = _lookahead[0];
-        for (int i = 0; i < LookheadSize - 1; i++)
-        {
-            _lookahead[i] = _lookahead[i + 1];
-        }
-        _lookahead[LookheadSize - 1] = _lexer.Lex();
+        var t = _lookahead[_lookheadIndex];
+        _lookahead[_lookheadIndex] = _lexer.Lex();
+        _lookheadIndex = (_lookheadIndex + 1) % LookheadSize;
         return t;
     }
 }
