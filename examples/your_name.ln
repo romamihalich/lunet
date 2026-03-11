@@ -1,0 +1,9 @@
+import System
+
+function main()
+    System::Console.Write("Enter your name: ")
+    local line: string = System::Console.ReadLine()
+
+    System::Console.Write("Hello, ")
+    System::Console.WriteLine(line)
+end
