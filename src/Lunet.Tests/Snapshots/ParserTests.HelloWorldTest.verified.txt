@@ -3,12 +3,9 @@
   Statements: [
     {
       $type: ImportStatement,
-      Path: {
-        $type: NamespacePath,
-        Path: [
-          System
-        ]
-      },
+      Path: [
+        System
+      ],
       Location: {
         $type: Location,
         StartRow: 1,
@@ -27,14 +24,11 @@
           Expression: {
             $type: FunctionCallExpression,
             Expression: {
-              $type: QualifiedIdentExpression,
-              Path: {
-                $type: NamespacePath,
-                Path: [
-                  System,
-                  Console
-                ]
-              },
+              $type: QualifiedNameExpression,
+              Path: [
+                System,
+                Console
+              ],
               Ident: WriteLine,
               Location: {
                 $type: Location,
@@ -67,14 +61,7 @@
           }
         }
       ],
-      ReturnType: void,
-      ReturnTypeLocation: {
-        $type: Location,
-        StartRow: 0,
-        StartCol: 0,
-        EndRow: 0,
-        EndCol: 0
-      }
+      ReturnType: null
     }
   ]
 }

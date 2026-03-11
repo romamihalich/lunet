@@ -8,25 +8,33 @@
         {
           $type: FunctionParameter,
           Name: a,
-          Type: int,
-          TypeLocation: {
-            $type: Location,
-            StartRow: 1,
-            StartCol: 17,
-            EndRow: 1,
-            EndCol: 19
+          Type: {
+            $type: QualifiedNameExpression,
+            Path: null,
+            Ident: int,
+            Location: {
+              $type: Location,
+              StartRow: 1,
+              StartCol: 17,
+              EndRow: 1,
+              EndCol: 19
+            }
           }
         },
         {
           $type: FunctionParameter,
           Name: b,
-          Type: int,
-          TypeLocation: {
-            $type: Location,
-            StartRow: 1,
-            StartCol: 25,
-            EndRow: 1,
-            EndCol: 27
+          Type: {
+            $type: QualifiedNameExpression,
+            Path: null,
+            Ident: int,
+            Location: {
+              $type: Location,
+              StartRow: 1,
+              StartCol: 25,
+              EndRow: 1,
+              EndCol: 27
+            }
           }
         }
       ],
@@ -68,13 +76,17 @@
           }
         }
       ],
-      ReturnType: int,
-      ReturnTypeLocation: {
-        $type: Location,
-        StartRow: 1,
-        StartCol: 33,
-        EndRow: 1,
-        EndCol: 35
+      ReturnType: {
+        $type: QualifiedNameExpression,
+        Path: null,
+        Ident: int,
+        Location: {
+          $type: Location,
+          StartRow: 1,
+          StartCol: 33,
+          EndRow: 1,
+          EndCol: 35
+        }
       }
     }
   ]

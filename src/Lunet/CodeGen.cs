@@ -123,7 +123,7 @@ internal class Compilation
 
     private void CompileImportStatement(ImportStatement import)
     {
-        var namespaceName = string.Join(".", import.Path.Path);
+        var namespaceName = string.Join(".", import.Path);
 
         var found = _referenceAssemblies
             .SelectMany(a => a.Modules)
@@ -139,12 +139,24 @@ internal class Compilation
     {
         foreach (var function in ast.Statements.OfType<FunctionStatement>())
         {
-            var returnType = LookupType(function.ReturnType);
-            if (returnType == null)
+            TypeReference returnType;
+            if (function.ReturnType == null)
             {
-                _diagnostics.AddError($"Unkown type '{function.ReturnType}'", function.ReturnTypeLocation);
+                returnType = _assembly.MainModule.TypeSystem.Void;
             }
-            returnType ??= _unknownType;
+            else
+            {
+                var maybeReturnType = LookupType(function.ReturnType);
+                if (maybeReturnType == null)
+                {
+                    _diagnostics.AddError($"Unkown type '{function.ReturnType}'", function.ReturnType.Location);
+                    returnType = _unknownType;
+                }
+                else
+                {
+                    returnType = maybeReturnType;
+                }
+            }
             var method = new MethodDefinition(function.Name, MethodAttributes.Private | MethodAttributes.Static, returnType);
             _programClass.Methods.Add(method);
 
@@ -154,7 +166,7 @@ internal class Compilation
 
                 if (type == null)
                 {
-                    _diagnostics.AddError($"Unkown type '{parameter.Type}'", parameter.TypeLocation);
+                    _diagnostics.AddError($"Unkown type '{parameter.Type}'", parameter.Type.Location);
                 }
 
                 type ??= _unknownType;
@@ -214,12 +226,12 @@ internal class Compilation
                         var realType = LookupType(variableDefinitionStatement.Type);
                         if (realType == null)
                         {
-                            _diagnostics.AddError($"Unkown type '{variableDefinitionStatement.Type}'", variableDefinitionStatement.TypeLocation);
+                            _diagnostics.AddError($"Unkown type '{variableDefinitionStatement.Type}'", variableDefinitionStatement.Type.Location);
                         }
                         var exprType = CompileExpression(ilProcessor, scope, variableDefinitionStatement.Rvalue);
                         if (realType != null && exprType != null && !realType.IsSameType(exprType))
                         {
-                            _diagnostics.AddError($"Cannot convert type '{exprType.FullName}' to '{realType.FullName}'", variableDefinitionStatement.TypeLocation);
+                            _diagnostics.AddError($"Cannot convert type '{exprType.FullName}' to '{realType.FullName}'", variableDefinitionStatement.Type.Location);
                         }
                         method.Body.Variables.Add(new VariableDefinition(exprType));
 
@@ -410,12 +422,12 @@ internal class Compilation
 
                 }
 
-                if (funcCall.Expression is not QualifiedIdentExpression name)
+                if (funcCall.Expression is not QualifiedNameExpression name)
                 {
                     throw new NotImplementedException(funcCall.Expression.GetType().ToString());
                 }
 
-                var namespaceOrClassPath = name.Path.Path;
+                var namespaceOrClassPath = name.Path;
                 if (!namespaceOrClassPath.Any())
                 {
                     throw new NotImplementedException("local function not supported yet");
@@ -426,7 +438,7 @@ internal class Compilation
                 }
                 // ["System", "Console"] ident: "WriteLine"
 
-                var prefix = name.Path.Path[0];
+                var prefix = name.Path[0];
                 if (!_importedNamespaces.Any(x => x.Split('.').Last() == prefix))
                 {
                     throw new NotImplementedException();
@@ -444,7 +456,7 @@ internal class Compilation
                     parameterTypes.Add(parameterType);
                 }
 
-                var className = string.Join(".", name.Path.Path);
+                var className = string.Join(".", name.Path);
                 var methodName = name.Ident;
                 var method = FindStaticMethod(className, methodName, parameterTypes);
                 if (method == null)
@@ -808,16 +820,40 @@ internal class Compilation
         }
     }
 
-    private TypeReference? LookupType(string type)
+    private TypeReference? LookupType(QualifiedNameExpression type)
     {
-        return type switch
+        if (type.Path.Count == 0)
         {
-            "string" => _assembly.MainModule.TypeSystem.String,
-            "int" => _assembly.MainModule.TypeSystem.Int32,
-            "bool" => _assembly.MainModule.TypeSystem.Boolean,
-            "void" => _assembly.MainModule.TypeSystem.Void,
-            _ => null,
-        };
+            return type.Ident switch
+            {
+                "string" => _assembly.MainModule.TypeSystem.String,
+                "int" => _assembly.MainModule.TypeSystem.Int32,
+                "bool" => _assembly.MainModule.TypeSystem.Boolean,
+                "void" => _assembly.MainModule.TypeSystem.Void,
+                _ => null,
+            };
+        }
+
+        if (type.Ident != null)
+        {
+            return null;
+        }
+
+        var className = string.Join(".", type.Path);
+
+        var candidates = FindClass(className);
+
+        switch (candidates.Length)
+        {
+            case > 1:
+                _diagnostics.AddError($"Type '{className}' is found in multiple reference assemblies", type.Location);
+                return null;
+            case <= 0:
+                _diagnostics.AddError($"Type '{className}' is not found in reference assemblies", type.Location);
+                return null;
+            case 1:
+                return candidates[0];
+        }
     }
 
     private MethodDefinition? FindStaticMethod(string className, string methodName, IEnumerable<TypeReference> parameterTypes)
@@ -826,6 +862,7 @@ internal class Compilation
             .SelectMany(a => a.Modules)
             .SelectMany(m => m.Types)
             .Where(t => t.FullName == className);
+
         var methods = types.SelectMany(t => t.Methods)
             .Where(m => m.IsPublic && m.IsStatic)
             .Where(m => m.Name == methodName)
@@ -836,6 +873,15 @@ internal class Compilation
             return null;
         }
         return methods.First();
+    }
+
+    private TypeDefinition[] FindClass(string className)
+    {
+        return _referenceAssemblies
+            .SelectMany(a => a.Modules)
+            .SelectMany(m => m.Types)
+            .Where(t => t.FullName == className)
+            .ToArray();
     }
 }
 

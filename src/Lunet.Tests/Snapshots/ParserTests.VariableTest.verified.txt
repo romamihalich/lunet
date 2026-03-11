@@ -3,12 +3,9 @@
   Statements: [
     {
       $type: ImportStatement,
-      Path: {
-        $type: NamespacePath,
-        Path: [
-          System
-        ]
-      },
+      Path: [
+        System
+      ],
       Location: {
         $type: Location,
         StartRow: 1,
@@ -25,7 +22,18 @@
         {
           $type: VariableDefinitionStatement,
           Name: greeting,
-          Type: string,
+          Type: {
+            $type: QualifiedNameExpression,
+            Path: null,
+            Ident: string,
+            Location: {
+              $type: Location,
+              StartRow: 4,
+              StartCol: 21,
+              EndRow: 4,
+              EndCol: 26
+            }
+          },
           Rvalue: {
             $type: StringExpression,
             Value: Hello, world,
@@ -36,13 +44,6 @@
               EndRow: 4,
               EndCol: 43
             }
-          },
-          TypeLocation: {
-            $type: Location,
-            StartRow: 4,
-            StartCol: 21,
-            EndRow: 4,
-            EndCol: 26
           }
         },
         {
@@ -50,14 +51,11 @@
           Expression: {
             $type: FunctionCallExpression,
             Expression: {
-              $type: QualifiedIdentExpression,
-              Path: {
-                $type: NamespacePath,
-                Path: [
-                  System,
-                  Console
-                ]
-              },
+              $type: QualifiedNameExpression,
+              Path: [
+                System,
+                Console
+              ],
               Ident: WriteLine,
               Location: {
                 $type: Location,
@@ -90,14 +88,7 @@
           }
         }
       ],
-      ReturnType: void,
-      ReturnTypeLocation: {
-        $type: Location,
-        StartRow: 0,
-        StartCol: 0,
-        EndRow: 0,
-        EndCol: 0
-      }
+      ReturnType: null
     }
   ]
 }

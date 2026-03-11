@@ -3,7 +3,7 @@ import System
 function main()
     System::Console.WriteLine(2 + 4 * 5)
 
-    local greeting: string = "Hello, world"
+    local greeting: System::String = "Hello, world"
 
     local number: int = 32
 
@@ -49,8 +49,11 @@ function main()
 
     System::Console.Write("sum(34 + 35) == ")
     System::Console.WriteLine(sum(34, 35))
+
+    local path: string = System::IO::Path.Combine("kek", "cheburek")
+    System::Console.WriteLine(path)
 end
 
-function sum(a: int, b: int) -> int
+function sum(a: int, b: int) -> System::Int32
     return a + b
 end
