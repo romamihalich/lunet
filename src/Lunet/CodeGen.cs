@@ -325,21 +325,21 @@ internal class Compilation
             {
                 return CompileExpression(ilProcessor, scope, parenthesisedExpression.Expression);
             }
-            case IdentExpression(var name, var location):
+            case QualifiedNameExpression qnameExpr:
             {
-                if (scope.TryGetArg(name, out var arg))
+                if (scope.TryGetArg(qnameExpr.Ident, out var arg))
                 {
                     ilProcessor.Emit(OpCodes.Ldarg, arg.Id);
                     return arg.Type;
                 }
-                else if (scope.TryGetLocal(name, out var local))
+                else if (scope.TryGetLocal(qnameExpr.Ident, out var local))
                 {
                     ilProcessor.Emit(OpCodes.Ldloc, local.Id);
                     return local.Type;
                 }
                 else
                 {
-                    _diagnostics.AddError($"Variable '{name}' is not found", location);
+                    _diagnostics.AddError($"Variable '{qnameExpr.Ident}' is not found", qnameExpr.Location);
                     return null;
                 }
             }
@@ -388,9 +388,14 @@ internal class Compilation
             }
             case FunctionCallExpression funcCall:
             {
-                if (funcCall.Expression is IdentExpression identExpression)
+                if (funcCall.Expression is not QualifiedNameExpression name)
                 {
-                    var localMethod = _localFunctions[identExpression.Name];
+                    throw new NotImplementedException(funcCall.Expression.GetType().ToString());
+                }
+
+                if (name.Path.Count == 0)
+                {
+                    var localMethod = _localFunctions[name.Ident];
                     if (localMethod.Parameters.Count != funcCall.Args.Count)
                     {
                         _diagnostics.AddError($"Expected {localMethod.Parameters.Count}, but was provided {funcCall.Args.Count}", funcCall.Location);
@@ -419,19 +424,8 @@ internal class Compilation
                     return !localMethod.ReturnType.IsSameType(_unknownType)
                         ? localMethod.ReturnType
                         : null;
-
                 }
 
-                if (funcCall.Expression is not QualifiedNameExpression name)
-                {
-                    throw new NotImplementedException(funcCall.Expression.GetType().ToString());
-                }
-
-                var namespaceOrClassPath = name.Path;
-                if (!namespaceOrClassPath.Any())
-                {
-                    throw new NotImplementedException("local function not supported yet");
-                }
                 if (name.Ident is null)
                 {
                     throw new NotImplementedException();

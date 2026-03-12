@@ -13,8 +13,9 @@
     }
   },
   Right: {
-    $type: IdentExpression,
-    Name: name,
+    $type: QualifiedNameExpression,
+    Path: null,
+    Ident: name,
     Location: {
       $type: Location,
       StartRow: 1,

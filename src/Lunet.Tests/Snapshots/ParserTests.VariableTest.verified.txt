@@ -67,8 +67,9 @@
             },
             Args: [
               {
-                $type: IdentExpression,
-                Name: greeting,
+                $type: QualifiedNameExpression,
+                Path: null,
+                Ident: greeting,
                 Location: {
                   $type: Location,
                   StartRow: 5,

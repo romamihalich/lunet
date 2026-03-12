@@ -5,8 +5,9 @@
     $type: BinopExpression,
     Kind: Greater,
     Left: {
-      $type: IdentExpression,
-      Name: x,
+      $type: QualifiedNameExpression,
+      Path: null,
+      Ident: x,
       Location: {
         $type: Location,
         StartRow: 1,
@@ -38,8 +39,9 @@
     $type: BinopExpression,
     Kind: Less,
     Left: {
-      $type: IdentExpression,
-      Name: x,
+      $type: QualifiedNameExpression,
+      Path: null,
+      Ident: x,
       Location: {
         $type: Location,
         StartRow: 1,

@@ -9,7 +9,7 @@ public record FunctionStatement(string Name, List<FunctionParameter> Parameters,
 public record struct FunctionParameter(string Name, QualifiedNameExpression Type);
 
 public interface IStatement;
-public record ExpressionStatement(FunctionCallExpression Expression) : IStatement;
+public record ExpressionStatement(IExpression Expression) : IStatement;
 public record VariableDefinitionStatement(string Name, QualifiedNameExpression Type, IExpression Rvalue) : IStatement;
 public record AssignmentStatement(QualifiedNameExpression Name, IExpression Rvalue) : IStatement;
 public record IfStatement(IExpression Condition, IReadOnlyList<IStatement> Block, IReadOnlyList<IStatement>? ElseBlock) : IStatement;
@@ -21,7 +21,6 @@ public interface IExpression
     public Location Location { get; }
 }
 public record ParenthesisedExpression(IExpression Expression, Location Location) : IExpression;
-public record IdentExpression(string Name, Location Location) : IExpression;
 public record StringExpression(string Value, Location Location) : IExpression;
 public record IntExpression(int Value, Location Location) : IExpression;
 public record BoolExpression(bool Value, Location Location) : IExpression;
@@ -326,40 +325,6 @@ public class Parser
     {
         switch (Peek().Kind)
         {
-            case TokenKind.Ident:
-            {
-                var identExpr = ParseQualifiedNameExpression();
-                if (identExpr == null)
-                {
-                    return null;
-                }
-                if (Peek().Kind == TokenKind.OParen)
-                {
-                    var (args, argsLocation) = ParseArgs();
-                    if (args == null)
-                    {
-                        return null;
-                    }
-                    var location = Location.Combine(identExpr.Location, argsLocation);
-                    return new ExpressionStatement(
-                        new FunctionCallExpression(identExpr, args, location)
-                    );
-                }
-                else if (Peek().Kind == TokenKind.Equals)
-                {
-                    NextToken();
-                    var rvalue = ParseExpression();
-                    if (rvalue == null)
-                    {
-                        return null;
-                    }
-                    return new AssignmentStatement(identExpr, rvalue);
-                }
-                else
-                {
-                    throw new NotImplementedException();
-                }
-            }
             case TokenKind.Local:
             {
                 return ParseVariableDefinitionStatement();
@@ -377,7 +342,24 @@ public class Parser
                 return ParseReturnStatement();
             }
             default:
-                return null;
+            {
+                var expr = ParseExpression();
+                if (expr == null)
+                {
+                    return null;
+                }
+                if (expr is QualifiedNameExpression qnameExpr && Peek().Kind == TokenKind.Equals)
+                {
+                    NextToken();
+                    var rvalue = ParseExpression();
+                    if (rvalue == null)
+                    {
+                        return null;
+                    }
+                    return new AssignmentStatement(qnameExpr, rvalue);
+                }
+                return new ExpressionStatement(expr);
+            }
         }
     }
 
@@ -521,7 +503,10 @@ public class Parser
     {
         var block = new List<IStatement>();
 
-        while (ParseStatement() is { } statement)
+        while (Peek().Kind != TokenKind.End
+               && Peek().Kind != TokenKind.Else
+               && Peek().Kind != TokenKind.ElseIf
+               && ParseStatement() is { } statement)
         {
             block.Add(statement);
         }
@@ -688,18 +673,13 @@ public class Parser
 
     private IExpression? ParsePrimaryExpression()
     {
-        if (Peek().Kind == TokenKind.Ident
-            && (Peek(1).Kind == TokenKind.DoubleColon
-                || Peek(1).Kind == TokenKind.Dot))
+        if (Peek().Kind == TokenKind.Ident)
         {
             return ParseQualifiedNameExpression();
         }
         var t = NextToken();
         switch (t.Kind)
         {
-            case TokenKind.Ident:
-                return new IdentExpression((string)t.Value!, t.Location);
-
             case TokenKind.String:
                 return new StringExpression((string)t.Value!, t.Location);
 

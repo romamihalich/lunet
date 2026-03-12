@@ -45,8 +45,9 @@
             $type: BinopExpression,
             Kind: Add,
             Left: {
-              $type: IdentExpression,
-              Name: a,
+              $type: QualifiedNameExpression,
+              Path: null,
+              Ident: a,
               Location: {
                 $type: Location,
                 StartRow: 2,
@@ -56,8 +57,9 @@
               }
             },
             Right: {
-              $type: IdentExpression,
-              Name: b,
+              $type: QualifiedNameExpression,
+              Path: null,
+              Ident: b,
               Location: {
                 $type: Location,
                 StartRow: 2,

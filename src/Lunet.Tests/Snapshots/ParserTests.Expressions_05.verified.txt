@@ -5,8 +5,9 @@
     $type: BinopExpression,
     Kind: Equal,
     Left: {
-      $type: IdentExpression,
-      Name: n,
+      $type: QualifiedNameExpression,
+      Path: null,
+      Ident: n,
       Location: {
         $type: Location,
         StartRow: 1,
@@ -41,8 +42,9 @@
       $type: BinopExpression,
       Kind: NotEqual,
       Left: {
-        $type: IdentExpression,
-        Name: n,
+        $type: QualifiedNameExpression,
+        Path: null,
+        Ident: n,
         Location: {
           $type: Location,
           StartRow: 1,
@@ -79,8 +81,9 @@
           $type: BinopExpression,
           Kind: GreaterOrEqual,
           Left: {
-            $type: IdentExpression,
-            Name: n,
+            $type: QualifiedNameExpression,
+            Path: null,
+            Ident: n,
             Location: {
               $type: Location,
               StartRow: 1,
