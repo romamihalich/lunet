@@ -166,6 +166,8 @@ public record QualifiedNameExpression(IReadOnlyList<string> Path, string? Ident,
     }
 }
 
+public record CastExpression(IExpression Expression, QualifiedNameExpression Type, Location Location) : IExpression;
+
 public class Parser
 {
     private const int LookheadSize = 3;
@@ -667,6 +669,17 @@ public class Parser
             }
             var location = Location.Combine(expr.Location, argsLocation);
             return new FunctionCallExpression(expr, args, location);
+        }
+        else if (Peek().Kind == TokenKind.As)
+        {
+            NextToken();
+            var type = ParseQualifiedNameExpression();
+            if (type == null)
+            {
+                return null;
+            }
+            var location = Location.Combine(expr.Location, type.Location);
+            return new CastExpression(expr, type, location);
         }
         return expr;
     }

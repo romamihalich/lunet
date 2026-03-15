@@ -30,6 +30,7 @@ public enum TokenKind
     While,
     Do,
     Return,
+    As,
 
     // symbols
     OParen,
@@ -230,6 +231,7 @@ public class Lexer
             "while"    => kind = TokenKind.While,
             "do"       => kind = TokenKind.Do,
             "return"   => kind = TokenKind.Return,
+            "as"       => kind = TokenKind.As,
             _          => kind = default,
         };
 

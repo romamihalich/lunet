@@ -467,6 +467,28 @@ internal class Compilation
                         return methodRef.ReturnType;
                 }
             }
+            case CastExpression castExpression:
+            {
+                var exprType = CompileExpression(ilProcessor, scope, castExpression.Expression);
+                if (exprType == null)
+                {
+                    return null;
+                }
+                var type = LookupType(castExpression.Type);
+                if (type == null)
+                {
+                    return null;
+                }
+                if (type.IsSameType(_assembly.MainModule.TypeSystem.Object))
+                {
+                    if (exprType.IsValueType)
+                    {
+                        ilProcessor.Emit(OpCodes.Box, exprType);
+                    }
+                    return _assembly.MainModule.TypeSystem.Object;
+                }
+                throw new NotImplementedException("Casting to object is implemented for now");
+            }
             default:
                 throw new ArgumentOutOfRangeException(nameof(expression));
         }
@@ -823,6 +845,7 @@ internal class Compilation
         {
             return type.Ident switch
             {
+                "object" => _assembly.MainModule.TypeSystem.Object,
                 "string" => _assembly.MainModule.TypeSystem.String,
                 "int" => _assembly.MainModule.TypeSystem.Int32,
                 "bool" => _assembly.MainModule.TypeSystem.Boolean,
