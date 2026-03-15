@@ -452,17 +452,20 @@ internal class Compilation
 
                 var className = string.Join(".", name.Path);
                 var methodName = name.Ident;
-                var method = FindStaticMethod(className, methodName, parameterTypes);
-                if (method == null)
+                var candidates = FindStaticMethod(className, methodName, parameterTypes);
+                switch (candidates.Length)
                 {
-                    _diagnostics.AddError($"Could not find method '{className}.{methodName}'", name.Location);
-                    return null;
+                    case <= 0:
+                        _diagnostics.AddError($"Could not find method '{className}.{methodName}'", name.Location);
+                        return null;
+                    case > 1:
+                        _diagnostics.AddError($"Multiple methods named '{className}.{methodName}' found", name.Location);
+                        return null;
+                    case 1:
+                        var methodRef = _assembly.MainModule.ImportReference(candidates[0]);
+                        ilProcessor.Emit(OpCodes.Call, methodRef);
+                        return methodRef.ReturnType;
                 }
-                var methodRef = _assembly.MainModule.ImportReference(method);
-
-                ilProcessor.Emit(OpCodes.Call, methodRef);
-
-                return methodRef.ReturnType;
             }
             default:
                 throw new ArgumentOutOfRangeException(nameof(expression));
@@ -839,18 +842,18 @@ internal class Compilation
 
         switch (candidates.Length)
         {
-            case > 1:
-                _diagnostics.AddError($"Type '{className}' is found in multiple reference assemblies", type.Location);
-                return null;
             case <= 0:
                 _diagnostics.AddError($"Type '{className}' is not found in reference assemblies", type.Location);
+                return null;
+            case > 1:
+                _diagnostics.AddError($"Type '{className}' is found in multiple reference assemblies", type.Location);
                 return null;
             case 1:
                 return candidates[0];
         }
     }
 
-    private MethodDefinition? FindStaticMethod(string className, string methodName, IEnumerable<TypeReference> parameterTypes)
+    private MethodDefinition[] FindStaticMethod(string className, string methodName, IEnumerable<TypeReference> parameterTypes)
     {
         var types = _referenceAssemblies
             .SelectMany(a => a.Modules)
@@ -862,11 +865,7 @@ internal class Compilation
             .Where(m => m.Name == methodName)
             .Where(m => m.Parameters.Select(p => p.ParameterType).SequenceEqual(parameterTypes, TypeReferenceEqualityComparer.Instance))
             .ToArray();
-        if (methods.Length != 1)
-        {
-            return null;
-        }
-        return methods.First();
+        return methods;
     }
 
     private TypeDefinition[] FindClass(string className)
