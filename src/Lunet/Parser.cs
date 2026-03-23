@@ -816,7 +816,6 @@ public class Parser
                 var location = lastLocation != default
                     ? Location.Combine(firstIdent.Location, lastLocation)
                     : firstIdent.Location;
-                
                 return new QualifiedNameExpression(path, null, location);
             }
         }
