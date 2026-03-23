@@ -544,92 +544,6 @@ public class Parser
         return block;
     }
 
-    private (IReadOnlyList<IExpression>?, Location) ParseArgs()
-    {
-        if (!ExpectToken(TokenKind.OParen, out var oparenToken))
-        {
-            return (null, default);
-        }
-
-        var args = new List<IExpression>();
-        while (Peek().Kind != TokenKind.CParen)
-        {
-            var expr = ParseExpression();
-
-            if (expr == null)
-            {
-                return (null, default);
-            }
-
-            args.Add(expr);
-
-            if (Peek().Kind != TokenKind.Comma)
-            {
-                break;
-            }
-
-            // skip ','
-            NextToken();
-        }
-
-        if (!ExpectToken(TokenKind.CParen, out var cparenToken))
-        {
-            return (null, default);
-        }
-
-        var location = Location.Combine(oparenToken.Location, cparenToken.Location);
-
-        return (args, location);
-    }
-
-    private QualifiedNameExpression? ParseQualifiedNameExpression()
-    {
-        if (!ExpectToken(TokenKind.Ident, out var firstIdent))
-        {
-            return null;
-        }
-
-        var peek = Peek();
-        if (peek.Kind == TokenKind.DoubleColon)
-        {
-            var path = new List<string>() { (string)firstIdent.Value! };
-            Location lastLocation = default;
-            while (Peek().Kind == TokenKind.DoubleColon)
-            {
-                NextToken();
-                if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
-                lastLocation = ident.Location;
-                path.Add((string)ident.Value!);
-            }
-            if (Peek().Kind == TokenKind.Dot)
-            {
-                NextToken();
-                if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
-                var location = Location.Combine(firstIdent.Location, ident.Location);
-                return new QualifiedNameExpression(path, (string)ident.Value!, location);
-            }
-            else
-            {
-                var location = lastLocation != default
-                    ? Location.Combine(firstIdent.Location, lastLocation)
-                    : firstIdent.Location;
-                
-                return new QualifiedNameExpression(path, null, location);
-            }
-        }
-        else if (peek.Kind == TokenKind.Dot)
-        {
-            NextToken();
-            if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
-            var location = Location.Combine(firstIdent.Location, ident.Location);
-            return new QualifiedNameExpression([(string)firstIdent.Value!], (string)ident.Value!, location);
-        }
-        else
-        {
-            return new QualifiedNameExpression([], (string)firstIdent.Value!, firstIdent.Location);
-        }
-    }
-
     public IExpression? ParseExpression()
     {
         return ParseBinopExpression(0);
@@ -773,6 +687,44 @@ public class Parser
         }
     }
 
+    private (IReadOnlyList<IExpression>?, Location) ParseArgs()
+    {
+        if (!ExpectToken(TokenKind.OParen, out var oparenToken))
+        {
+            return (null, default);
+        }
+
+        var args = new List<IExpression>();
+        while (Peek().Kind != TokenKind.CParen)
+        {
+            var expr = ParseExpression();
+
+            if (expr == null)
+            {
+                return (null, default);
+            }
+
+            args.Add(expr);
+
+            if (Peek().Kind != TokenKind.Comma)
+            {
+                break;
+            }
+
+            // skip ','
+            NextToken();
+        }
+
+        if (!ExpectToken(TokenKind.CParen, out var cparenToken))
+        {
+            return (null, default);
+        }
+
+        var location = Location.Combine(oparenToken.Location, cparenToken.Location);
+
+        return (args, location);
+    }
+
     private ArrayExpression? ParseArrayExpression()
     {
         if (!ExpectToken(TokenKind.OCurly, out var openBracketToken))
@@ -831,6 +783,54 @@ public class Parser
             location = Location.Combine(location, closeBracketToken.Location);
         }
         return new TypeNameExpression(qname, isArray, location);
+    }
+
+    private QualifiedNameExpression? ParseQualifiedNameExpression()
+    {
+        if (!ExpectToken(TokenKind.Ident, out var firstIdent))
+        {
+            return null;
+        }
+
+        var peek = Peek();
+        if (peek.Kind == TokenKind.DoubleColon)
+        {
+            var path = new List<string>() { (string)firstIdent.Value! };
+            Location lastLocation = default;
+            while (Peek().Kind == TokenKind.DoubleColon)
+            {
+                NextToken();
+                if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
+                lastLocation = ident.Location;
+                path.Add((string)ident.Value!);
+            }
+            if (Peek().Kind == TokenKind.Dot)
+            {
+                NextToken();
+                if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
+                var location = Location.Combine(firstIdent.Location, ident.Location);
+                return new QualifiedNameExpression(path, (string)ident.Value!, location);
+            }
+            else
+            {
+                var location = lastLocation != default
+                    ? Location.Combine(firstIdent.Location, lastLocation)
+                    : firstIdent.Location;
+                
+                return new QualifiedNameExpression(path, null, location);
+            }
+        }
+        else if (peek.Kind == TokenKind.Dot)
+        {
+            NextToken();
+            if (!ExpectToken(TokenKind.Ident, out var ident)) return null;
+            var location = Location.Combine(firstIdent.Location, ident.Location);
+            return new QualifiedNameExpression([(string)firstIdent.Value!], (string)ident.Value!, location);
+        }
+        else
+        {
+            return new QualifiedNameExpression([], (string)firstIdent.Value!, firstIdent.Location);
+        }
     }
 
     private bool ExpectToken(TokenKind kind, out Token t)
