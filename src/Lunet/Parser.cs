@@ -278,13 +278,13 @@ public class Parser
 
     private List<FunctionParameter>? ParseFunctionParameters()
     {
-        if (!ExpectToken(TokenKind.OParen, out _))
+        if (!ExpectToken(TokenKind.OpenRoundBracket, out _))
         {
             return null;
         }
 
         var parameters = new List<FunctionParameter>();
-        while (Peek().Kind != TokenKind.CParen)
+        while (Peek().Kind != TokenKind.CloseRoundBracket)
         {
             if (!ExpectToken(TokenKind.Ident, out var nameToken))
             {
@@ -316,7 +316,7 @@ public class Parser
             NextToken();
         }
 
-        if (!ExpectToken(TokenKind.CParen, out _))
+        if (!ExpectToken(TokenKind.CloseRoundBracket, out _))
         {
             return null;
         }
@@ -602,7 +602,7 @@ public class Parser
         {
             return null;
         }
-        if (Peek().Kind == TokenKind.OParen)
+        if (Peek().Kind == TokenKind.OpenRoundBracket)
         {
             var (args, argsLocation) = ParseArgs();
             if (args == null)
@@ -623,7 +623,7 @@ public class Parser
             var location = Location.Combine(expr.Location, type.Location);
             return new CastExpression(expr, type, location);
         }
-        else if (Peek().Kind == TokenKind.OBracket)
+        else if (Peek().Kind == TokenKind.OpenSquareBracket)
         {
             NextToken();
             var indexExpr = ParseExpression();
@@ -631,7 +631,7 @@ public class Parser
             {
                 return null;
             }
-            if (!ExpectToken(TokenKind.CBracket, out var closeBracketToken))
+            if (!ExpectToken(TokenKind.CloseSquareBracket, out var closeBracketToken))
             {
                 return null;
             }
@@ -647,7 +647,7 @@ public class Parser
         {
             return ParseQualifiedNameExpression();
         }
-        else if (Peek().Kind == TokenKind.OCurly)
+        else if (Peek().Kind == TokenKind.OpenCurlyBracket)
         {
             return ParseArrayExpression();
         }
@@ -666,14 +666,14 @@ public class Parser
             case TokenKind.False:
                 return new BoolExpression(false, t.Location);
 
-            case TokenKind.OParen:
+            case TokenKind.OpenRoundBracket:
             {
                 var expr = ParseExpression();
                 if (expr == null)
                 {
                     return null;
                 }
-                if (!ExpectToken(TokenKind.CParen, out var cparenToken))
+                if (!ExpectToken(TokenKind.CloseRoundBracket, out var cparenToken))
                 {
                     return null;
                 }
@@ -689,13 +689,13 @@ public class Parser
 
     private (IReadOnlyList<IExpression>?, Location) ParseArgs()
     {
-        if (!ExpectToken(TokenKind.OParen, out var oparenToken))
+        if (!ExpectToken(TokenKind.OpenRoundBracket, out var oparenToken))
         {
             return (null, default);
         }
 
         var args = new List<IExpression>();
-        while (Peek().Kind != TokenKind.CParen)
+        while (Peek().Kind != TokenKind.CloseRoundBracket)
         {
             var expr = ParseExpression();
 
@@ -715,7 +715,7 @@ public class Parser
             NextToken();
         }
 
-        if (!ExpectToken(TokenKind.CParen, out var cparenToken))
+        if (!ExpectToken(TokenKind.CloseRoundBracket, out var cparenToken))
         {
             return (null, default);
         }
@@ -727,13 +727,13 @@ public class Parser
 
     private ArrayExpression? ParseArrayExpression()
     {
-        if (!ExpectToken(TokenKind.OCurly, out var openBracketToken))
+        if (!ExpectToken(TokenKind.OpenCurlyBracket, out var openBracketToken))
         {
             return null;
         }
 
         var elements = new List<IExpression>();
-        while (Peek().Kind != TokenKind.CCurly)
+        while (Peek().Kind != TokenKind.CloseCurlyBracket)
         {
             var expr = ParseExpression();
 
@@ -753,7 +753,7 @@ public class Parser
             NextToken();
         }
 
-        if (!ExpectToken(TokenKind.CCurly, out var closeBracketToken))
+        if (!ExpectToken(TokenKind.CloseCurlyBracket, out var closeBracketToken))
         {
             return null;
         }
@@ -772,10 +772,10 @@ public class Parser
         }
         var location = qname.Location;
         var isArray = false;
-        if (Peek().Kind == TokenKind.OBracket)
+        if (Peek().Kind == TokenKind.OpenSquareBracket)
         {
             NextToken();
-            if (!ExpectToken(TokenKind.CBracket, out var closeBracketToken))
+            if (!ExpectToken(TokenKind.CloseSquareBracket, out var closeBracketToken))
             {
                 return null;
             }
