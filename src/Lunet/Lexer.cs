@@ -15,7 +15,6 @@ public enum TokenKind
     True,
     False,
 
-    // keywords
     Import,
     Function,
     End,
@@ -32,9 +31,13 @@ public enum TokenKind
     Return,
     As,
 
-    // symbols
     OParen,
     CParen,
+    OCurly,
+    CCurly,
+    OBracket,
+    CBracket,
+
     Colon,
     DoubleColon,
     Arrow,
@@ -99,6 +102,10 @@ public class Lexer
 
             '('                     => Eat(TokenKind.OParen, 0),
             ')'                     => Eat(TokenKind.CParen, 0),
+            '{'                     => Eat(TokenKind.OCurly, 0),
+            '}'                     => Eat(TokenKind.CCurly, 0),
+            '['                     => Eat(TokenKind.OBracket, 0),
+            ']'                     => Eat(TokenKind.CBracket, 0),
             ':' when Peek() == ':'  => Eat(TokenKind.DoubleColon, 1),
             ':'                     => Eat(TokenKind.Colon, 0),
             '-' when Peek() == '>'  => Eat(TokenKind.Arrow, 1),

@@ -301,6 +301,43 @@ internal class Compilation
                         }
                         break;
                     }
+                case IndexAssignmentStatement indexAssignmentStatement:
+                    {
+                        var arrayType = CompileExpression(ilProcessor, scope, indexAssignmentStatement.IndexAccessExpression.Array);
+
+                        if (arrayType != null && !arrayType.IsArray)
+                        {
+                            _diagnostics.AddError($"Indexed expression is not an array", indexAssignmentStatement.IndexAccessExpression.Array.Location);
+                        }
+
+                        var indexType = CompileExpression(ilProcessor, scope, indexAssignmentStatement.IndexAccessExpression.IndexExpression);
+                        if (indexType != null && !indexType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
+                        {
+                            _diagnostics.AddError($"Index must be of type Int32", indexAssignmentStatement.IndexAccessExpression.IndexExpression.Location);
+                        }
+
+                        // for one based indexing
+                        ilProcessor.Emit(OpCodes.Ldc_I4_1);
+                        ilProcessor.Emit(OpCodes.Sub);
+
+                        var elementType = arrayType != null && arrayType.IsArray
+                            ? ((ArrayType)arrayType).ElementType
+                            : null;
+
+                        var rvalueType = CompileExpression(ilProcessor, scope, indexAssignmentStatement.Rvalue);
+                        if (rvalueType != null && elementType != null
+                            && !rvalueType.IsSameType(elementType))
+                        {
+                            _diagnostics.AddError($"Type of this array is {elementType.FullName}, but was provided a value of type {rvalueType.FullName}", indexAssignmentStatement.Rvalue.Location);
+                        }
+
+                        if (elementType != null)
+                        {
+                            ilProcessor.Emit(OpCodes.Stelem_Any, elementType);
+                        }
+
+                        break;
+                    }
                 case ReturnStatement returnStatement:
                     {
                         var returnType = CompileExpression(ilProcessor, scope, returnStatement.Expression);
@@ -488,6 +525,73 @@ internal class Compilation
                     return _assembly.MainModule.TypeSystem.Object;
                 }
                 throw new NotImplementedException("Casting to object is implemented for now");
+            }
+            case ArrayExpression arrayExpression:
+            {
+                var arrayStart = ilProcessor.Create(OpCodes.Nop);
+                ilProcessor.Append(arrayStart);
+
+                var arraySize = arrayExpression.Elements.Count;
+
+                var types = new TypeReference?[arraySize];
+                for (int i = 0; i < arraySize; i++)
+                {
+                    ilProcessor.Emit(OpCodes.Dup);
+                    ilProcessor.Emit(OpCodes.Ldc_I4, i);
+                    types[i] = CompileExpression(ilProcessor, scope, arrayExpression.Elements[i]);
+                    ilProcessor.Emit(OpCodes.Stelem_Any, types[i]);
+                }
+
+                if (types.Any(t => t == null))
+                {
+                    return null;
+                }
+
+                var elementType = types[0]!;
+                var isSameType = types.All(t => t!.IsSameType(elementType));
+                if (!isSameType)
+                {
+                    _diagnostics.AddError("No best type found for the array", arrayExpression.Location);
+                    return null;
+                }
+
+                var arraySizeInstruction = ilProcessor.Create(OpCodes.Ldc_I4, arraySize);
+                var newarrInstruction = ilProcessor.Create(OpCodes.Newarr, elementType);
+
+                ilProcessor.InsertAfter(arrayStart, newarrInstruction);
+                ilProcessor.InsertAfter(arrayStart, arraySizeInstruction);
+
+                return new ArrayType(elementType);
+            }
+            case IndexAccessExpression indexAccessExpression:
+            {
+                var arrayType = CompileExpression(ilProcessor, scope, indexAccessExpression.Array);
+
+                if (arrayType != null && !arrayType.IsArray)
+                {
+                    _diagnostics.AddError($"Indexed expression is not an array", indexAccessExpression.Array.Location);
+                }
+
+                var indexType = CompileExpression(ilProcessor, scope, indexAccessExpression.IndexExpression);
+                if (indexType != null && !indexType.IsSameType(_assembly.MainModule.TypeSystem.Int32))
+                {
+                    _diagnostics.AddError($"Index must be of type Int32", indexAccessExpression.IndexExpression.Location);
+                }
+
+                // for one based indexing
+                ilProcessor.Emit(OpCodes.Ldc_I4_1);
+                ilProcessor.Emit(OpCodes.Sub);
+
+                var elementType = arrayType != null && arrayType.IsArray
+                    ? ((ArrayType)arrayType).ElementType
+                    : null;
+
+                if (elementType != null)
+                {
+                    ilProcessor.Emit(OpCodes.Ldelem_Any, elementType);
+                }
+
+                return elementType;
             }
             default:
                 throw new ArgumentOutOfRangeException(nameof(expression));
@@ -839,11 +943,21 @@ internal class Compilation
         }
     }
 
-    private TypeReference? LookupType(QualifiedNameExpression type)
+    private TypeReference? LookupType(TypeNameExpression type)
     {
-        if (type.Path.Count == 0)
+        var typeRef = LookupTypeByName(type.Name);
+        if (typeRef != null && type.IsArray)
         {
-            return type.Ident switch
+            typeRef = new ArrayType(typeRef);
+        }
+        return typeRef;
+    }
+
+    private TypeReference? LookupTypeByName(QualifiedNameExpression name)
+    {
+        if (name.Path.Count == 0)
+        {
+            return name.Ident switch
             {
                 "object" => _assembly.MainModule.TypeSystem.Object,
                 "string" => _assembly.MainModule.TypeSystem.String,
@@ -854,22 +968,22 @@ internal class Compilation
             };
         }
 
-        if (type.Ident != null)
+        if (name.Ident != null)
         {
             return null;
         }
 
-        var className = string.Join(".", type.Path);
+        var className = string.Join(".", name.Path);
 
         var candidates = FindClass(className);
 
         switch (candidates.Length)
         {
             case <= 0:
-                _diagnostics.AddError($"Type '{className}' is not found in reference assemblies", type.Location);
+                _diagnostics.AddError($"Type '{className}' is not found in reference assemblies", name.Location);
                 return null;
             case > 1:
-                _diagnostics.AddError($"Type '{className}' is found in multiple reference assemblies", type.Location);
+                _diagnostics.AddError($"Type '{className}' is found in multiple reference assemblies", name.Location);
                 return null;
             case 1:
                 return candidates[0];

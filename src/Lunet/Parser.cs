@@ -4,14 +4,15 @@ public record Ast(IReadOnlyList<ITopLevelStatement> Statements);
 
 public interface ITopLevelStatement;
 public record ImportStatement(IReadOnlyList<string> Path, Location Location) : ITopLevelStatement;
-public record FunctionStatement(string Name, List<FunctionParameter> Parameters, IReadOnlyList<IStatement> Body, QualifiedNameExpression? ReturnType) : ITopLevelStatement;
+public record FunctionStatement(string Name, List<FunctionParameter> Parameters, IReadOnlyList<IStatement> Body, TypeNameExpression? ReturnType) : ITopLevelStatement;
 
-public record struct FunctionParameter(string Name, QualifiedNameExpression Type);
+public record struct FunctionParameter(string Name, TypeNameExpression Type);
 
 public interface IStatement;
 public record ExpressionStatement(IExpression Expression) : IStatement;
-public record VariableDefinitionStatement(string Name, QualifiedNameExpression Type, IExpression Rvalue) : IStatement;
+public record VariableDefinitionStatement(string Name, TypeNameExpression Type, IExpression Rvalue) : IStatement;
 public record AssignmentStatement(QualifiedNameExpression Name, IExpression Rvalue) : IStatement;
+public record IndexAssignmentStatement(IndexAccessExpression IndexAccessExpression, IExpression Rvalue) : IStatement;
 public record IfStatement(IExpression Condition, IReadOnlyList<IStatement> Block, IReadOnlyList<IStatement>? ElseBlock) : IStatement;
 public record WhileStatement(IExpression Condition, IReadOnlyList<IStatement> Block) : IStatement;
 public record ReturnStatement(IExpression Expression) : IStatement;
@@ -166,7 +167,24 @@ public record QualifiedNameExpression(IReadOnlyList<string> Path, string? Ident,
     }
 }
 
-public record CastExpression(IExpression Expression, QualifiedNameExpression Type, Location Location) : IExpression;
+public record CastExpression(IExpression Expression, TypeNameExpression Type, Location Location) : IExpression;
+
+public record ArrayExpression(IReadOnlyList<IExpression> Elements, Location Location) : IExpression;
+
+public record IndexAccessExpression(IExpression Array, IExpression IndexExpression, Location Location) : IExpression;
+
+public record TypeNameExpression(QualifiedNameExpression Name, bool IsArray, Location Location) : IExpression
+{
+    public override string? ToString()
+    {
+        var qname = base.ToString();
+        if (IsArray)
+        {
+            qname += "[]";
+        }
+        return qname;
+    }
+}
 
 public class Parser
 {
@@ -237,11 +255,11 @@ public class Parser
             return null;
         }
 
-        QualifiedNameExpression? returnType = null;
+        TypeNameExpression? returnType = null;
         if (Peek().Kind == TokenKind.Arrow)
         {
             NextToken();
-            returnType = ParseQualifiedNameExpression();
+            returnType = ParseTypeNameExpression();
             if (returnType == null)
             {
                 return null;
@@ -280,7 +298,7 @@ public class Parser
                 return null;
             }
 
-            var type = ParseQualifiedNameExpression();
+            var type = ParseTypeNameExpression();
 
             if (type == null)
             {
@@ -360,6 +378,16 @@ public class Parser
                     }
                     return new AssignmentStatement(qnameExpr, rvalue);
                 }
+                else if (expr is IndexAccessExpression indexAccessExpression && Peek().Kind == TokenKind.Equals)
+                {
+                    NextToken();
+                    var rvalue = ParseExpression();
+                    if (rvalue == null)
+                    {
+                        return null;
+                    }
+                    return new IndexAssignmentStatement(indexAccessExpression, rvalue);
+                }
                 return new ExpressionStatement(expr);
             }
         }
@@ -384,7 +412,7 @@ public class Parser
             return null;
         }
 
-        var type = ParseQualifiedNameExpression();
+        var type = ParseTypeNameExpression();
 
         if (type == null)
         {
@@ -673,13 +701,28 @@ public class Parser
         else if (Peek().Kind == TokenKind.As)
         {
             NextToken();
-            var type = ParseQualifiedNameExpression();
+            var type = ParseTypeNameExpression();
             if (type == null)
             {
                 return null;
             }
             var location = Location.Combine(expr.Location, type.Location);
             return new CastExpression(expr, type, location);
+        }
+        else if (Peek().Kind == TokenKind.OBracket)
+        {
+            NextToken();
+            var indexExpr = ParseExpression();
+            if (indexExpr == null)
+            {
+                return null;
+            }
+            if (!ExpectToken(TokenKind.CBracket, out var closeBracketToken))
+            {
+                return null;
+            }
+            var location = Location.Combine(expr.Location, closeBracketToken.Location);
+            return new IndexAccessExpression(expr, indexExpr, location);
         }
         return expr;
     }
@@ -689,6 +732,10 @@ public class Parser
         if (Peek().Kind == TokenKind.Ident)
         {
             return ParseQualifiedNameExpression();
+        }
+        else if (Peek().Kind == TokenKind.OCurly)
+        {
+            return ParseArrayExpression();
         }
         var t = NextToken();
         switch (t.Kind)
@@ -724,6 +771,66 @@ public class Parser
                 _diagnostics.AddError("Expected expression", t.Location);
                 return null;
         }
+    }
+
+    private ArrayExpression? ParseArrayExpression()
+    {
+        if (!ExpectToken(TokenKind.OCurly, out var openBracketToken))
+        {
+            return null;
+        }
+
+        var elements = new List<IExpression>();
+        while (Peek().Kind != TokenKind.CCurly)
+        {
+            var expr = ParseExpression();
+
+            if (expr == null)
+            {
+                return null;
+            }
+
+            elements.Add(expr);
+
+            if (Peek().Kind != TokenKind.Comma)
+            {
+                break;
+            }
+
+            // skip ','
+            NextToken();
+        }
+
+        if (!ExpectToken(TokenKind.CCurly, out var closeBracketToken))
+        {
+            return null;
+        }
+
+        var location = Location.Combine(openBracketToken.Location, closeBracketToken.Location);
+
+        return new ArrayExpression(elements, location);
+    }
+
+    private TypeNameExpression? ParseTypeNameExpression()
+    {
+        var qname = ParseQualifiedNameExpression();
+        if (qname == null)
+        {
+            return null;
+        }
+        var location = qname.Location;
+        var isArray = false;
+        if (Peek().Kind == TokenKind.OBracket)
+        {
+            NextToken();
+            if (!ExpectToken(TokenKind.CBracket, out var closeBracketToken))
+            {
+                return null;
+            }
+            isArray = true;
+            location = Location.Combine(location, closeBracketToken.Location);
+        }
+        return new TypeNameExpression(qname, isArray, location);
     }
 
     private bool ExpectToken(TokenKind kind, out Token t)

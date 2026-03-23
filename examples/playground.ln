@@ -51,8 +51,19 @@ function main()
     System::Console.WriteLine(sum(34, 35))
 
     local path: string = System::IO::Path.Combine("kek", "cheburek")
-    local formatted: string = System::String.Format("Path: {0}", path as object)
-    System::Console.WriteLine(formatted)
+
+    local array: string[] = {
+        "First", "Second", "3"
+    }
+
+    System::Console.Write("First item is: ")
+    System::Console.WriteLine(array[1])
+
+    array[3] = "Third"
+    System::Console.Write("Third item after changing is: ")
+    System::Console.WriteLine(array[3])
+
+    System::Console.WriteLine("Path: {0}", { path as object })
 
     System::Console.WriteLine(System::String.Format("Int: {0}", 3 as object))
 end
