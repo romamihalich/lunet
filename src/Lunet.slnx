@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Lunet.Cli/Lunet.Cli.csproj" />
+  <Project Path="Lunet.Tests/Lunet.Tests.csproj" />
+  <Project Path="Lunet/Lunet.csproj" />
+</Solution>
