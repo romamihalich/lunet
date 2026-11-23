@@ -24,7 +24,7 @@ public class CodeGen
 
     public static void Generate(Ast ast, string outFilePath, Diagnostics diagnostics)
     {
-        var moduleName = "hello";
+        var moduleName = Path.GetFileNameWithoutExtension(outFilePath);
 
         // var imports = ast.Statements.OfType<ImportStatement>().ToArray();
 
